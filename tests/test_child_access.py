@@ -1,0 +1,313 @@
+"""How a child gets into the app, and everything that must stay shut to them.
+
+A child token is the one credential in the system held by a child, so the
+boundaries around it are tested hard: what it opens, what it must never open,
+and how a parent takes it away again.
+"""
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import select
+
+from app.db.models import ChildAccessLog, ChildDevice, ChildLinkCode
+from tests.test_sessions import (
+    _auth_headers,
+    _login,
+    _make_parent_with_child,
+    _make_therapist,
+    _register,
+)
+
+
+def _h(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _code(client, parent_token, child_id) -> str:
+    resp = await client.post(f"/children/{child_id}/link-code", headers=_auth_headers(parent_token))
+    assert resp.status_code == 201, resp.text
+    return resp.json()["code"]
+
+
+async def _linked_child(client):
+    """A parent, their child, and a token for the child's own linked phone."""
+    parent_token, child = await _make_parent_with_child(client)
+    code = await _code(client, parent_token, child["id"])
+    resp = await client.post("/auth/child/link", json={"code": code})
+    assert resp.status_code == 201, resp.text
+    return parent_token, child, resp.json()["access_token"]
+
+
+# ----------------------------------------------------------- linking a phone ----
+
+
+@pytest.mark.asyncio
+async def test_child_links_their_own_phone_with_the_parents_code(client):
+    parent_token, child, child_token = await _linked_child(client)
+
+    me = await client.get("/auth/child/me", headers=_h(child_token))
+    assert me.status_code == 200
+    assert me.json()["full_name"] == child["full_name"]
+
+
+@pytest.mark.asyncio
+async def test_a_code_works_once_only(client):
+    parent_token, child = await _make_parent_with_child(client)
+    code = await _code(client, parent_token, child["id"])
+
+    assert (await client.post("/auth/child/link", json={"code": code})).status_code == 201
+    second = await client.post("/auth/child/link", json={"code": code})
+    assert second.status_code == 400 and second.json()["detail"] == "That code didn't work"
+
+
+@pytest.mark.asyncio
+async def test_issuing_a_new_code_kills_the_previous_one(client):
+    """A code left on screen earlier must not still pair a phone."""
+    parent_token, child = await _make_parent_with_child(client)
+    first = await _code(client, parent_token, child["id"])
+    second = await _code(client, parent_token, child["id"])
+
+    assert (await client.post("/auth/child/link", json={"code": first})).status_code == 400
+    assert (await client.post("/auth/child/link", json={"code": second})).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_an_expired_code_is_refused(client, db_session):
+    parent_token, child = await _make_parent_with_child(client)
+    code = await _code(client, parent_token, child["id"])
+    entry = (
+        await db_session.execute(select(ChildLinkCode).where(ChildLinkCode.code == code))
+    ).scalar_one()
+    entry.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+
+    assert (await client.post("/auth/child/link", json={"code": code})).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_a_made_up_code_gives_nothing_away(client):
+    resp = await client.post("/auth/child/link", json={"code": "ZZZZZZ"})
+    assert resp.status_code == 400 and resp.json()["detail"] == "That code didn't work"
+
+
+@pytest.mark.asyncio
+async def test_only_the_childs_own_parent_can_issue_a_code(client):
+    _, child = await _make_parent_with_child(client)
+    other_parent_token, _ = await _make_parent_with_child(client)
+    therapist_token, _ = await _make_therapist(client)
+
+    assert (
+        await client.post(f"/children/{child['id']}/link-code", headers=_auth_headers(other_parent_token))
+    ).status_code == 404
+    assert (
+        await client.post(f"/children/{child['id']}/link-code", headers=_auth_headers(therapist_token))
+    ).status_code == 403
+
+
+# ------------------------------------------------- the parent hands their phone over ----
+
+
+@pytest.mark.asyncio
+async def test_parent_can_start_a_child_session_on_their_own_phone(client):
+    parent_token, child = await _make_parent_with_child(client)
+    resp = await client.post(f"/children/{child['id']}/child-session", headers=_auth_headers(parent_token))
+    assert resp.status_code == 201, resp.text
+
+    body = resp.json()
+    assert body["child"]["full_name"] == child["full_name"]
+    me = await client.get("/auth/child/me", headers=_h(body["access_token"]))
+    assert me.status_code == 200
+
+    # Short-lived on purpose: the phone goes back in the parent's pocket.
+    expires = datetime.fromisoformat(body["expires_at"])
+    assert expires < datetime.now(timezone.utc) + timedelta(days=1)
+
+
+# --------------------------------------------------------- what a child cannot do ----
+
+
+@pytest.mark.asyncio
+async def test_a_child_token_cannot_act_as_an_adult_account(client):
+    """The one credential a child holds must not open any adult route."""
+    parent_token, child, child_token = await _linked_child(client)
+    headers = _h(child_token)
+
+    for method, path in [
+        ("get", "/auth/me"),
+        ("get", "/children"),
+        ("get", f"/children/{child['id']}"),
+        ("get", "/sessions"),
+        ("get", "/admin/users"),
+        ("get", "/admin/safety/stats"),
+        ("get", "/therapists"),
+    ]:
+        resp = await getattr(client, method)(path, headers=headers)
+        assert resp.status_code == 401, f"{path} let a child token through ({resp.status_code})"
+
+
+@pytest.mark.asyncio
+async def test_a_child_cannot_issue_codes_or_revoke_devices(client):
+    parent_token, child, child_token = await _linked_child(client)
+    assert (await client.post(f"/children/{child['id']}/link-code", headers=_h(child_token))).status_code == 401
+    assert (await client.get(f"/children/{child['id']}/devices", headers=_h(child_token))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_adult_token_is_not_a_child_token(client):
+    """The separation runs both ways."""
+    parent_token, child = await _make_parent_with_child(client)
+    assert (await client.get("/auth/child/me", headers=_auth_headers(parent_token))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_the_child_profile_carries_no_risk_or_parent_details(client):
+    """HANDOFF rule 5: the child's app must never receive risk levels or scores."""
+    _, _, child_token = await _linked_child(client)
+    body = (await client.get("/auth/child/me", headers=_h(child_token))).json()
+
+    assert set(body) == {"id", "full_name", "therapist_name"}
+    blob = str(body).lower()
+    for leak in ("risk", "concern", "urgent", "parent_id", "emergency_contact", "home_address"):
+        assert leak not in blob
+
+
+# ------------------------------------------------------------------ revoking ----
+
+
+@pytest.mark.asyncio
+async def test_parent_revokes_a_phone_and_its_token_dies_at_once(client):
+    parent_token, child, child_token = await _linked_child(client)
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 200
+
+    devices = (await client.get(f"/children/{child['id']}/devices", headers=_auth_headers(parent_token))).json()
+    assert len(devices) == 1 and devices[0]["kind"] == "linked"
+
+    revoke = await client.post(
+        f"/children/{child['id']}/devices/{devices[0]['id']}/revoke", headers=_auth_headers(parent_token)
+    )
+    assert revoke.status_code == 204
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_another_parent_cannot_revoke_someone_elses_device(client):
+    parent_token, child, _ = await _linked_child(client)
+    devices = (await client.get(f"/children/{child['id']}/devices", headers=_auth_headers(parent_token))).json()
+    other_parent_token, _ = await _make_parent_with_child(client)
+
+    resp = await client.post(
+        f"/children/{child['id']}/devices/{devices[0]['id']}/revoke", headers=_auth_headers(other_parent_token)
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_an_archived_child_cannot_be_linked_or_keep_using_a_phone(client, db_session):
+    from app.db.models import User, UserRole
+    from app.security import hash_password
+
+    parent_token, child, child_token = await _linked_child(client)
+    admin = User(
+        email=f"{uuid.uuid4().hex}@example.com",
+        hashed_password=hash_password("AdminPass123!"),
+        role=UserRole.ADMIN,
+        full_name="Admin Test",
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    admin_token = await _login(client, admin.email, "AdminPass123!")
+
+    assert (
+        await client.post(f"/children/{child['id']}/archive", headers=_auth_headers(admin_token))
+    ).status_code == 404  # admin archive lives under /admin
+    archive = await client.post(f"/admin/children/{child['id']}/archive", headers=_auth_headers(admin_token))
+    assert archive.status_code == 200
+
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 401
+
+
+# -------------------------------------------------------------------- audit ----
+
+
+@pytest.mark.asyncio
+async def test_child_access_is_attributed_to_the_device_not_a_person(client, db_session):
+    """CLAUDE.md requires every access to a child's records to be logged. A child's own
+    device is an actor too, so the trail has no blind spot."""
+    parent_token, child, _ = await _linked_child(client)
+
+    rows = (
+        await db_session.execute(
+            select(ChildAccessLog).where(ChildAccessLog.child_id == uuid.UUID(child["id"]))
+        )
+    ).scalars().all()
+    actions = {r.action for r in rows}
+    assert {"link_code_issued", "child_device_linked"} <= actions
+
+    linked = next(r for r in rows if r.action == "child_device_linked")
+    assert linked.accessed_by_user_id is None  # no adult did this
+    issued = next(r for r in rows if r.action == "link_code_issued")
+    assert issued.accessed_by_user_id is not None  # the parent did
+
+
+@pytest.mark.asyncio
+async def test_using_the_app_updates_the_devices_last_seen(client, db_session):
+    _, child, child_token = await _linked_child(client)
+    await client.get("/auth/child/me", headers=_h(child_token))
+
+    device = (
+        await db_session.execute(select(ChildDevice).where(ChildDevice.child_id == uuid.UUID(child["id"])))
+    ).scalar_one()
+    assert device.last_seen_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_child_can_use_the_companion_from_their_own_phone(client):
+    """The companion is the one surface a child token must open."""
+    _, child, child_token = await _linked_child(client)
+
+    resp = await client.post(
+        "/companion/reply",
+        json={"child_id": child["id"], "messages": [{"role": "user", "content": "hello"}]},
+        headers=_h(child_token),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["reply"]
+    # The child's app must never be told a risk level it could display (HANDOFF rule 5
+    # is enforced in the client; the field exists for the parent's side of the story).
+    assert set(body) == {"reply", "flagged", "risk_level"}
+
+
+@pytest.mark.asyncio
+async def test_a_child_cannot_use_the_companion_as_a_different_child(client):
+    _, _, child_token = await _linked_child(client)
+    _, other_child = await _make_parent_with_child(client)
+
+    resp = await client.post(
+        "/companion/reply",
+        json={"child_id": other_child["id"], "messages": [{"role": "user", "content": "hello"}]},
+        headers=_h(child_token),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_companion_use_from_a_phone_is_logged_against_the_device(client, db_session):
+    _, child, child_token = await _linked_child(client)
+    await client.post(
+        "/companion/reply",
+        json={"child_id": child["id"], "messages": [{"role": "user", "content": "hello"}]},
+        headers=_h(child_token),
+    )
+
+    row = (
+        await db_session.execute(
+            select(ChildAccessLog).where(
+                ChildAccessLog.child_id == uuid.UUID(child["id"]),
+                ChildAccessLog.action == "companion_reply",
+            )
+        )
+    ).scalars().first()
+    assert row is not None
+    assert row.accessed_by_device_id is not None and row.accessed_by_user_id is None

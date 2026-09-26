@@ -1,0 +1,18 @@
+# Dependencies (each app also has its own ignore file)
+node_modules/
+
+# The previous mobile app, kept locally as a backup until the new one is finished
+mobile-old/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.db
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store

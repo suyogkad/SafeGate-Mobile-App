@@ -1,0 +1,54 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Internal context docs and AI tooling: never pushed. HANDOFF.md is the only doc in the repo.
+CLAUDE.md
+AGENTS.md
+DESIGN.md
+docs/
+.claude/
+assets/faces/faces_svg.svg
+
+# Source artwork: the app ships optimised copies (assets/brand/, assets/therapists/), not these originals.
+assets/logo1.jpg
+assets/logo - favicon.jpg
+assets/therapist images/
