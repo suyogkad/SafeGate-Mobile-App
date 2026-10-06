@@ -307,24 +307,25 @@ async def test_session_cap_enforced(client, monkeypatch):
 from dotenv import dotenv_values  # noqa: E402
 
 _real_env = dotenv_values(Path(__file__).parent.parent / ".env")
-_real_google_api_key = _real_env.get("GOOGLE_API_KEY", "")
+_real_groq_api_key = _real_env.get("GROQ_API_KEY", "")
 
 
-@pytest.mark.skipif(not _real_google_api_key, reason="requires a real GOOGLE_API_KEY in .env")
+@pytest.mark.real_model
+@pytest.mark.skipif(not _real_groq_api_key, reason="requires a real GROQ_API_KEY in .env")
 @pytest.mark.asyncio
 async def test_real_classifier_accuracy_report(monkeypatch):
     from app.config import Settings
 
     real_settings = Settings(
-        ai_provider="gemini",
-        google_api_key=_real_google_api_key,
-        ai_companion_model=_real_env.get("AI_COMPANION_MODEL", "gemini-2.5-flash"),
-        ai_classifier_model=_real_env.get("AI_CLASSIFIER_MODEL", "gemini-2.5-flash"),
-        ai_classifier_timeout_seconds=float(_real_env.get("AI_CLASSIFIER_TIMEOUT_SECONDS", 10)),
+        ai_provider="groq",
+        groq_api_key=_real_groq_api_key,
+        ai_companion_model=_real_env.get("AI_COMPANION_MODEL", "openai/gpt-oss-120b"),
+        ai_classifier_model=_real_env.get("AI_CLASSIFIER_MODEL", "openai/gpt-oss-120b"),
+        ai_classifier_timeout_seconds=float(_real_env.get("AI_CLASSIFIER_TIMEOUT_SECONDS", 30)),
     )
     monkeypatch.setattr("app.ai.safety.get_settings", lambda: real_settings)
     monkeypatch.setattr("app.ai.providers.get_settings", lambda: real_settings)
-    monkeypatch.setattr("app.ai.providers.gemini.get_settings", lambda: real_settings)
+    monkeypatch.setattr("app.ai.providers.groq.get_settings", lambda: real_settings)
 
     # Call the classifier directly (not safety.check_child_message) so a
     # failed/errored call can be counted separately from a genuine "none"
@@ -336,6 +337,9 @@ async def test_real_classifier_accuracy_report(monkeypatch):
     # 65-case run usually cannot complete for real; this stops early once it
     # detects that, rather than burning the rest of the day's quota on calls
     # that will only ever fail-closed.
+    PACE_SECONDS = 2.5
+    RETRY_SECONDS = 20.0
+
     risky_total = risky_caught = 0
     safe_total = safe_wrongly_flagged = 0
     errored = 0
@@ -345,7 +349,7 @@ async def test_real_classifier_accuracy_report(monkeypatch):
         if consecutive_errors >= 3:
             print(f"\nStopping early after {consecutive_errors} consecutive failures (likely quota exhaustion).")
             break
-        try:
+        async def classify() -> RiskLevel:
             raw = await generate(
                 system=RISK_CLASSIFIER_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": case["message"]}],
@@ -353,7 +357,19 @@ async def test_real_classifier_accuracy_report(monkeypatch):
                 max_tokens=400,
                 json_mode=True,
             )
-            risk = RiskLevel(json.loads(raw)["risk"])
+            return RiskLevel(json.loads(raw)["risk"])
+
+        try:
+            await asyncio.sleep(PACE_SECONDS)  # free tiers limit requests per minute
+            try:
+                risk = await classify()
+            except Exception as first:
+                # A rate limit or a transient JSON-validation blip: wait and try once more,
+                # so neither is mistaken for the model's judgment.
+                if "429" not in str(first) and "400" not in str(first):
+                    raise
+                await asyncio.sleep(RETRY_SECONDS)
+                risk = await classify()
             consecutive_errors = 0
         except Exception as e:
             errored += 1

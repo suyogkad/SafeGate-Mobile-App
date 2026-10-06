@@ -1,9 +1,12 @@
 """The one door to the AI: every AI call in this app goes through generate().
-Only files inside this package may import the Gemini SDK.
+Only files inside this package may import an AI SDK or call an AI endpoint.
 """
 from app.ai.providers.gemini import GeminiProvider
+from app.ai.providers.groq import GroqProvider
 from app.ai.providers.mock import MockProvider
 from app.config import get_settings
+
+_PROVIDERS = {"groq": GroqProvider, "gemini": GeminiProvider}
 
 
 async def generate(
@@ -14,7 +17,7 @@ async def generate(
     json_mode: bool = False,
 ) -> str:
     settings = get_settings()
-    provider = GeminiProvider() if settings.ai_provider == "gemini" else MockProvider()
+    provider = _PROVIDERS.get(settings.ai_provider, MockProvider)()
     return await provider.generate(
         system_prompt=system, messages=messages, model=model, max_tokens=max_tokens, json_mode=json_mode
     )

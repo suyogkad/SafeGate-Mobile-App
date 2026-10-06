@@ -8,7 +8,7 @@ This repo also contains two clients: `frontend/`, the admin web console (Vite + 
 
 - Python 3.12, FastAPI, Pydantic v2
 - PostgreSQL, SQLAlchemy 2.0 (async), Alembic migrations
-- Google Gemini SDK (`google-genai`) for the AI companion, behind a provider abstraction (`AI_PROVIDER=mock` by default)
+- Groq (`openai/gpt-oss-120b`) for the AI companion and the safety classifier, behind a provider abstraction; Gemini is kept as a second provider. The provider is chosen in the admin console, not in `.env`.
 - APScheduler for session reminders
 - pytest for tests
 
@@ -47,6 +47,7 @@ cp .env.example .env
 | `DATABASE_URL` | Async Postgres connection string. URL-encode special characters in the password (e.g. `@` -> `%40`). |
 | `JWT_SECRET_KEY` | Random secret for signing access tokens. Generate one, don't use the placeholder. |
 | `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | JWT config. |
+| `GROQ_API_KEY` | Required before the console will let you select the `groq` provider. Get one free at [console.groq.com](https://console.groq.com) -- note this is **Groq**, not xAI's **Grok**. |
 | `GOOGLE_API_KEY` | Required before the console will let you select the `gemini` AI provider. Get one free at [aistudio.google.com](https://aistudio.google.com) -- no billing required, but the free tier is capped at **20 requests/day per model per project** (see `CLAUDE.md`'s AI provider notes). |
 | `DAILY_API_KEY` | Required before the console will let you select the `daily` video provider. Get it from the Daily dashboard under **Developers**. |
 | `ENVIRONMENT`, `CORS_ORIGINS` | App environment name and allowed CORS origins. |

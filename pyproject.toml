@@ -2,3 +2,8 @@
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+# Real-model tests cost quota and need the network, so they stay out of the default
+# run (CLAUDE.md: "tests that call the real model are marked and run on request only").
+# Run the accuracy report with:  pytest -m real_model -s
+markers = ["real_model: calls the real AI provider; excluded by default"]
+addopts = "-m 'not real_model'"

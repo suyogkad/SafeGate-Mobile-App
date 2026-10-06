@@ -15,11 +15,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
 
-    # AI provider
+    # AI provider. "groq" is api.groq.com (keys begin "gsk_"); not to be confused
+    # with xAI's Grok, which is a different company.
     ai_provider: str = "mock"
+    groq_api_key: str = ""
     google_api_key: str = ""
-    ai_companion_model: str = "gemini-3.6-flash"
-    ai_classifier_model: str = "gemini-3.6-flash"
+    ai_companion_model: str = "openai/gpt-oss-120b"
+    ai_classifier_model: str = "openai/gpt-oss-120b"
     ai_classifier_timeout_seconds: float = 20.0
 
     # Safety / alerts

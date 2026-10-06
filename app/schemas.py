@@ -287,7 +287,7 @@ class SettingsUpdate(BaseModel):
     companion_session_window_minutes: int | None = Field(default=None, ge=1, le=1440)
     reminder_lead_minutes: int | None = Field(default=None, ge=0, le=10080)
     safety_country: str | None = Field(default=None, min_length=2, max_length=2)
-    ai_provider: Literal["mock", "gemini"] | None = None
+    ai_provider: Literal["mock", "groq", "gemini"] | None = None
     ai_companion_model: str | None = Field(default=None, min_length=1, max_length=100)
     ai_classifier_model: str | None = Field(default=None, min_length=1, max_length=100)
     ai_classifier_timeout_seconds: float | None = Field(default=None, ge=1, le=120)

@@ -48,6 +48,8 @@ def _check_consistency(values: dict[str, Any]) -> None:
     settings = get_settings()
     if values["safety_country"] not in EMERGENCY_NUMBERS:
         raise ValueError(f"No emergency numbers are configured for country {values['safety_country']}")
+    if values["ai_provider"] == "groq" and not settings.groq_api_key:
+        raise ValueError("The Groq provider needs GROQ_API_KEY set on the server")
     if values["ai_provider"] == "gemini" and not settings.google_api_key:
         raise ValueError("The Gemini provider needs GOOGLE_API_KEY set on the server")
     if values["ai_provider"] == "mock" and settings.environment == "production":
