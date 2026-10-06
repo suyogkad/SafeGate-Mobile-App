@@ -19,17 +19,18 @@ import { Divider, SectionHeader } from '@/components/ui/bits';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { EMERGENCY_NOTE_SHORT, helpline } from '@/data/helplines';
-import { THERAPIST } from '@/data/people';
 import { callNumber, contact } from '@/lib/call';
 import { calmLead } from '@/lib/calmLead';
 import { clockTime } from '@/lib/time';
-import { useApp, useChildName } from '@/store/app';
+import { useApp, useChildName, useTherapistFirstName, useTherapistFullName } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 export default function Alert() {
   const { c } = useTheme();
   const name = useChildName() || 'Alex';
+  const therapistFirst = useTherapistFirstName();
+  const therapistFull = useTherapistFullName();
   const params = useLocalSearchParams<{ kind?: string }>();
   const account = useApp((s) => s.account);
   const parentName = account?.name || 'Parent';
@@ -94,7 +95,7 @@ export default function Alert() {
         </Fact>
         {calm ? (
           <Fact label="Also told" last>
-            {`${THERAPIST.name}, ${name}'s therapist`}
+            {`${therapistFull}, ${name}'s therapist`}
           </Fact>
         ) : null}
       </Card>
@@ -113,11 +114,11 @@ export default function Alert() {
         <Divider />
         <ActionRow
           icon="send"
-          title={`Message ${THERAPIST.first}`}
+          title={`Message ${therapistFirst}`}
           sub={calm ? `Therapist notified at ${time}` : undefined}
           action="Message"
-          label={`Message ${THERAPIST.name}`}
-          onPress={() => contact('message', THERAPIST.name)}
+          label={`Message ${therapistFull}`}
+          onPress={() => contact('message', therapistFull)}
         />
       </View>
 

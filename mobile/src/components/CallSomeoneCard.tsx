@@ -1,8 +1,8 @@
 import { View } from 'react-native';
 import type { HelpContact } from '../data/helpTopics';
 import { EMERGENCY_NOTE_SHORT, helpline } from '../data/helplines';
-import { PARENT } from '../data/people';
 import { callNumber } from '../lib/call';
+import { useGrownUpName, useGrownUpPhone } from '../store/app';
 import { space } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
 import { Button } from './ui/Button';
@@ -22,8 +22,10 @@ export function CallSomeoneCard({
   intro?: string;
 }) {
   const { c } = useTheme();
+  const grownUpName = useGrownUpName();
+  const grownUpPhone = useGrownUpPhone();
   const rows = contacts.map((id) => {
-    if (id === 'grown-up') return { key: id, name: PARENT.first, detail: 'Your grown-up', number: PARENT.phone, emergency: false };
+    if (id === 'grown-up') return { key: id, name: grownUpName, detail: 'Your grown-up', number: grownUpPhone, emergency: false };
     const h = helpline(id);
     return { key: id, name: h.name, detail: id === '000' ? 'If you are in danger' : h.number, number: h.number, emergency: id === '000' };
   });

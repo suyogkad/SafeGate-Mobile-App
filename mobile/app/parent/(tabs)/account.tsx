@@ -19,10 +19,9 @@ import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
 import { Icon } from '@/components/ui/Icon';
 import { FACES } from '@/data/faces';
-import { THERAPIST } from '@/data/people';
 import { demoOnly } from '@/lib/call';
 import { signOutEverywhere } from '@/lib/auth';
-import { useApp, useChildName } from '@/store/app';
+import { useApp, useChildName, useTherapistFullName } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -42,6 +41,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function Account() {
   const { c } = useTheme();
   const name = useChildName();
+  const therapistFull = useTherapistFullName();
   const account = useApp((s) => s.account);
   const linked = useApp((s) => s.childLinked);
   const prefs = useApp((s) => s.alertPrefs);
@@ -69,7 +69,7 @@ export default function Account() {
 
         <Section title="Alerts">
           <ListRow title="How we reach you" value="App and text" icon="bell" divider onPress={() => demoOnly('In the real app you could choose how alerts reach you.')} />
-          <ListRow title="Also tell" value={THERAPIST.name} icon="user-check" divider onPress={() => demoOnly('In the real app you could choose who else is told.')} />
+          <ListRow title="Also tell" value={therapistFull} icon="user-check" divider onPress={() => demoOnly('In the real app you could choose who else is told.')} />
           <ListRow title="All notifications" icon="list" chevron onPress={() => router.push('/parent/notifications')} />
         </Section>
 

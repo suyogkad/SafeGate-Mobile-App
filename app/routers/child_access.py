@@ -62,7 +62,16 @@ async def _profile(db: AsyncSession, child: Child) -> ChildProfileOut:
         therapist_name = (
             await db.execute(select(User.full_name).where(User.id == child.therapist_id))
         ).scalar_one_or_none()
-    return ChildProfileOut(id=child.id, full_name=child.full_name, therapist_name=therapist_name)
+    parent_user = (
+        await db.execute(select(User).where(User.id == child.parent_id))
+    ).scalar_one_or_none()
+    return ChildProfileOut(
+        id=child.id,
+        full_name=child.full_name,
+        grown_up_name=parent_user.full_name if parent_user else None,
+        grown_up_phone=parent_user.phone if parent_user else None,
+        therapist_name=therapist_name,
+    )
 
 
 async def _issue(db: AsyncSession, child: Child, kind: str, label: str | None, minutes: int) -> ChildTokenOut:

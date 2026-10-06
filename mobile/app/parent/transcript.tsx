@@ -18,10 +18,9 @@ import { FaceCircle } from '@/components/ui/bits';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { FACES } from '@/data/faces';
-import { THERAPIST } from '@/data/people';
 import { KIND_ART, KIND_TAG, transcript, type Transcript } from '@/data/transcripts';
 import { liveSections, type LiveSection } from '@/lib/liveTranscript';
-import { useApp, useChildName } from '@/store/app';
+import { useApp, useChildName, useTherapistFirstName } from '@/store/app';
 import { artTints, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -30,6 +29,7 @@ type Section = { kind: Transcript['kind']; day: string; time: string; lines: Liv
 export default function TranscriptScreen() {
   const { c } = useTheme();
   const name = useChildName();
+  const therapistFirst = useTherapistFirstName();
   const id = useLocalSearchParams<{ id?: string }>().id ?? 'live';
   const messages = useApp((s) => s.messages);
   const journal = useApp((s) => s.journal);
@@ -54,7 +54,7 @@ export default function TranscriptScreen() {
     <Screen
       backdrop="brand"
       header={<Header title={`${name}'s chat`} getHelp={false} fallback="/parent/chats" />}
-      footer={<Button title={`Share with ${THERAPIST.first}`} variant="outline" iconLeft="send" onPress={() => router.push('/parent/share')} />}
+      footer={<Button title={`Share with ${therapistFirst}`} variant="outline" iconLeft="send" onPress={() => router.push('/parent/share')} />}
     >
       <Card tone="tint" padding={space.md}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>

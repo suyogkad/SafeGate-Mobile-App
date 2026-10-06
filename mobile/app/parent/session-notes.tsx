@@ -15,12 +15,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { T } from '@/components/ui/T';
-import { THERAPIST } from '@/data/people';
 import { ALEX_PAST } from '@/data/practice';
 import { contact } from '@/lib/call';
 import { latestSharedId } from '@/lib/clients';
 import { dayLabel } from '@/lib/schedule';
-import { useApp } from '@/store/app';
+import { useApp, useTherapistFirstName, useTherapistFullName, useTherapistInitials } from '@/store/app';
 import { space } from '@/theme/tokens';
 
 /** Older links used the first demo id for the Tue 6 Oct notes. */
@@ -28,6 +27,9 @@ const ALIASES: Record<string, string> = { sep16: 'oct6', sep4: 'sep24' };
 
 export default function SessionNotes() {
   const params = useLocalSearchParams<{ id?: string }>();
+  const therapistFirst = useTherapistFirstName();
+  const therapistFull = useTherapistFullName();
+  const therapistInitials = useTherapistInitials();
   const notes = useApp((s) => s.sessionNotes);
   const id = (params.id && (ALIASES[params.id] ?? params.id)) || latestSharedId(notes) || 'oct6';
   const session = ALEX_PAST.find((b) => b.id === id) ?? ALEX_PAST[1];
@@ -38,16 +40,16 @@ export default function SessionNotes() {
     <Screen
       backdrop="brand"
       header={<Header title="Session notes" left="close" getHelp={false} fallback="/parent/sessions" />}
-      footer={<Button title={`Send ${THERAPIST.first} a note`} variant="outline" iconLeft="send" onPress={() => contact('message', THERAPIST.name)} />}
+      footer={<Button title={`Send ${therapistFirst} a note`} variant="outline" iconLeft="send" onPress={() => contact('message', therapistFull)} />}
     >
       <Appear>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-            <Avatar initials={THERAPIST.initials} size={64} tone="brand" />
+            <Avatar initials={therapistInitials} size={64} tone="brand" />
             <View style={{ flex: 1, gap: space.xs }}>
               <Badge label={shared ? 'NOTES SHARED' : 'NOTES COMING'} tone={shared ? 'success' : 'neutral'} />
               <T v="heading" header>
-                Notes from {THERAPIST.first}
+                Notes from {therapistFirst}
               </T>
               <T v="bodySm" color="textMuted">
                 {dayLabel(session.date).replace(/^(\w+) /, '$1, ')} · {session.kind}
@@ -70,7 +72,7 @@ export default function SessionNotes() {
           {n.shared ? (
             <View style={{ gap: space.md }}>
               <T v="section" header>
-                What {THERAPIST.first} shared
+                What {therapistFirst} shared
               </T>
               <SharedMessage text={n.shared} />
             </View>
@@ -87,7 +89,7 @@ export default function SessionNotes() {
       ) : (
         <Card tone="raised" r={24} padding={space.xl}>
           <T v="bodyLg" color="textSecondary">
-            {THERAPIST.first} will share notes from this session here. You’ll get a notification when they’re ready.
+            {therapistFirst} will share notes from this session here. You’ll get a notification when they’re ready.
           </T>
         </Card>
       )}

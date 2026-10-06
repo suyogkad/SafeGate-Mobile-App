@@ -166,7 +166,7 @@ async def test_the_child_profile_carries_no_risk_or_parent_details(client):
     _, _, child_token = await _linked_child(client)
     body = (await client.get("/auth/child/me", headers=_h(child_token))).json()
 
-    assert set(body) == {"id", "full_name", "therapist_name"}
+    assert set(body) == {"id", "full_name", "therapist_name", "grown_up_name", "grown_up_phone"}
     blob = str(body).lower()
     for leak in ("risk", "concern", "urgent", "parent_id", "emergency_contact", "home_address"):
         assert leak not in blob

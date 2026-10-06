@@ -25,9 +25,8 @@ import { Tappable } from '@/components/ui/Tappable';
 import { ART } from '@/data/faces';
 import { HELP_TOPICS } from '@/data/helpTopics';
 import { HELPLINES, helpline } from '@/data/helplines';
-import { PARENT, THERAPIST } from '@/data/people';
 import { callNumber, contact } from '@/lib/call';
-import { useApp } from '@/store/app';
+import { useApp, useGrownUpName, useTherapistFirstName } from '@/store/app';
 import { radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -35,6 +34,8 @@ const TOPIC_ICON: Record<string, IconName> = { unsafe: 'shield', hurting: 'user'
 
 export default function GetHelp() {
   const { c } = useTheme();
+  const grownUp = useGrownUpName();
+  const therapistName = useTherapistFirstName();
   const n000 = helpline('000');
   const lines = HELPLINES.filter((h) => h.id !== '000');
   const [messaging, setMessaging] = useState(false);
@@ -81,15 +82,15 @@ export default function GetHelp() {
           Your people
         </T>
         <Card tone="raised" padding={space.lg}>
-          <PersonRow initials={PARENT.first[0]} name={PARENT.first} role="Your grown-up">
-            <Button title="Call" size="small" iconLeft="phone" label={`Call ${PARENT.first}`} onPress={() => contact('call', PARENT.first)} />
-            <Button title="Text" size="small" variant="outline" label={`Text ${PARENT.first}`} onPress={() => contact('text', PARENT.first)} />
+          <PersonRow initials={grownUp.charAt(0).toUpperCase()} name={grownUp} role="Your grown-up">
+            <Button title="Call" size="small" iconLeft="phone" label={`Call ${grownUp}`} onPress={() => contact('call', grownUp)} />
+            <Button title="Text" size="small" variant="outline" label={`Text ${grownUp}`} onPress={() => contact('text', grownUp)} />
           </PersonRow>
           <View style={{ marginVertical: space.md }}>
             <Divider />
           </View>
-          <PersonRow initials={THERAPIST.first[0]} name={THERAPIST.first} role="Your therapist">
-            <Button title="Message" size="small" variant="outline" iconLeft="send" label={`Message ${THERAPIST.first}`} onPress={openMessage} />
+          <PersonRow initials={therapistName.charAt(0).toUpperCase()} name={therapistName} role="Your therapist">
+            <Button title="Message" size="small" variant="outline" iconLeft="send" label={`Message ${therapistName}`} onPress={openMessage} />
           </PersonRow>
         </Card>
       </View>
@@ -126,7 +127,7 @@ export default function GetHelp() {
 
       <EmergencyNote short />
 
-      <Dialog visible={messaging} onClose={() => setMessaging(false)} title={sent ? 'Message sent' : `Message ${THERAPIST.first}`}>
+      <Dialog visible={messaging} onClose={() => setMessaging(false)} title={sent ? 'Message sent' : `Message ${therapistName}`}>
         {sent ? (
           <>
             <View style={{ alignItems: 'center' }} accessibilityLiveRegion="polite">
@@ -135,7 +136,7 @@ export default function GetHelp() {
               </View>
             </View>
             <T v="body" color="textSecondary" center>
-              {THERAPIST.first} reads messages between sessions. If you need help right now, call 000 or a helpline.
+              {therapistName} reads messages between sessions. If you need help right now, call 000 or a helpline.
             </T>
             <Button title="Done" onPress={() => setMessaging(false)} />
           </>
@@ -150,7 +151,7 @@ export default function GetHelp() {
             <Input
               area
               multiline
-              a11yLabel={`Message to ${THERAPIST.first}`}
+              a11yLabel={`Message to ${therapistName}`}
               placeholder="Write your message"
               value={draft}
               onChangeText={(v) => {
@@ -165,7 +166,7 @@ export default function GetHelp() {
               </T>
             ) : null}
             <T v="bodySm" color="textMuted">
-              Messages aren’t for emergencies. {THERAPIST.first} reads them between sessions.
+              Messages aren’t for emergencies. {therapistName} reads them between sessions.
             </T>
             <Button title="Send" icon="send" onPress={sendMessage} />
             <Button title="Cancel" variant="outline" onPress={() => setMessaging(false)} />

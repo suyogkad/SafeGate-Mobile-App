@@ -37,7 +37,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     steps: [
       'If you are in danger right now, call 000.',
       'Kids Helpline is free and there any time. They will listen.',
-      'You can tell Priya in your session, or a teacher you trust.',
+      'You can tell your therapist in your session, or a teacher you trust.',
     ],
     contacts: ['000', 'kids-helpline'],
     tellGrownUp: false,

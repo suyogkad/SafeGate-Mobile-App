@@ -26,6 +26,9 @@ export type ChildProfile = {
   hard: string[];
   help: string | null;
   communicate: string[];
+  grownUpName?: string | null;
+  grownUpPhone?: string | null;
+  therapistName?: string | null;
 };
 
 export type JournalEntry = { prompt: string; text: string; at: string };
@@ -542,6 +545,50 @@ export const useUnreadCount = (audience: NotificationAudience = 'parent') =>
 
 /** Child's display name everywhere ("Alex" by default). */
 export const useChildName = () => useApp((s) => s.child.name || CHILD_DEFAULT_NAME);
+
+/** Child's grown-up first name ("Your grown-up" fallback). */
+export const useGrownUpName = () =>
+  useApp((s) => {
+    const fromChild = s.child.grownUpName;
+    const fromAccount = s.account?.name;
+    const full = fromChild || fromAccount || 'Your grown-up';
+    return full.split(' ')[0];
+  });
+
+/** Child's grown-up phone number. */
+export const useGrownUpPhone = () =>
+  useApp((s) => s.child.grownUpPhone || '0412 345 678');
+
+/** Child's assigned therapist's first name ("Your therapist" fallback). */
+export const useTherapistFirstName = () =>
+  useApp((s) => {
+    if (s.session?.therapistFirst) return s.session.therapistFirst;
+    if (s.child.therapistName) {
+      const cleaned = s.child.therapistName.replace(/^Dr\.\s*/i, '').trim();
+      return cleaned.split(' ')[0] || cleaned;
+    }
+    return 'Priya';
+  });
+
+/** Child's assigned therapist's full name ("Priya Shah" fallback). */
+export const useTherapistFullName = () =>
+  useApp((s) => {
+    if (s.session?.therapist) return s.session.therapist;
+    if (s.child.therapistName) return s.child.therapistName;
+    return 'Priya Shah';
+  });
+
+/** Child's assigned therapist's initials ("PS" fallback). */
+export const useTherapistInitials = () =>
+  useApp((s) => {
+    const full = (s.session?.therapist || s.child.therapistName || 'Priya Shah')
+      .replace(/^Dr\.\s*/i, '')
+      .trim();
+    const parts = full.split(' ').filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return 'PS';
+  });
 
 // Dev only: lets the browser console / preview tooling drive the demo state (window.__safegate.getState()).
 if (__DEV__ && typeof window !== 'undefined') {

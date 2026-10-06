@@ -25,8 +25,13 @@ async function adoptFirstChild(): Promise<void> {
     const children = (await listChildren()).filter((c) => !c.archived_at);
     const first = children[0];
     if (!first) return;
+    const account = useApp.getState().account;
     useApp.getState().setChildId(first.id);
-    useApp.getState().updateChild({ name: first.full_name });
+    useApp.getState().updateChild({
+      name: first.full_name,
+      grownUpName: account?.name,
+      therapistName: first.therapist_name,
+    });
   } catch {
     // Not fatal: the parent may not have added a child yet.
   }
@@ -50,7 +55,14 @@ export async function parentCreateAccount(name: string, email: string, password:
   useApp.getState().setAccount({ id: user.id, name: user.full_name, email: user.email, role: 'parent' });
   useApp.getState().signInParent();
   useApp.getState().setChildId(null);
-  useApp.getState().updateChild({ name: '', feeling: null, hard: [], help: null, communicate: [] });
+  useApp.getState().updateChild({
+    name: '',
+    feeling: null,
+    hard: [],
+    help: null,
+    communicate: [],
+    grownUpName: user.full_name,
+  });
 }
 
 export async function therapistSignIn(email: string, password: string): Promise<void> {
@@ -72,7 +84,12 @@ export async function therapistSignIn(email: string, password: string): Promise<
 export async function childLink(code: string): Promise<ApiChildProfile> {
   const child = await linkChildPhone(code);
   useApp.getState().setChildId(child.id);
-  useApp.getState().updateChild({ name: child.full_name });
+  useApp.getState().updateChild({
+    name: child.full_name,
+    grownUpName: child.grown_up_name,
+    grownUpPhone: child.grown_up_phone,
+    therapistName: child.therapist_name,
+  });
   useApp.getState().linkChild();
   return child;
 }
@@ -80,8 +97,14 @@ export async function childLink(code: string): Promise<ApiChildProfile> {
 /** The parent hands their phone over for a sitting. */
 export async function childSessionOnThisPhone(childId: string): Promise<ApiChildProfile> {
   const child = await startChildSession(childId);
+  const account = useApp.getState().account;
   useApp.getState().setChildId(child.id);
-  useApp.getState().updateChild({ name: child.full_name });
+  useApp.getState().updateChild({
+    name: child.full_name,
+    grownUpName: child.grown_up_name || account?.name,
+    grownUpPhone: child.grown_up_phone,
+    therapistName: child.therapist_name,
+  });
   return child;
 }
 
@@ -112,7 +135,12 @@ export async function restoreSession(): Promise<'/parent/home' | '/therapist/tod
     if (session.role === 'child') {
       const child = await childMe();
       useApp.getState().setChildId(child.id);
-      useApp.getState().updateChild({ name: child.full_name });
+      useApp.getState().updateChild({
+        name: child.full_name,
+        grownUpName: child.grown_up_name,
+        grownUpPhone: child.grown_up_phone,
+        therapistName: child.therapist_name,
+      });
       useApp.getState().linkChild();
       return '/home';
     }

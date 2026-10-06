@@ -19,7 +19,13 @@ export type ApiUser = {
   created_at: string;
 };
 
-export type ApiChildProfile = { id: string; full_name: string; therapist_name: string | null };
+export type ApiChildProfile = {
+  id: string;
+  full_name: string;
+  grown_up_name?: string | null;
+  grown_up_phone?: string | null;
+  therapist_name: string | null;
+};
 
 type TokenResponse = { access_token: string };
 type ChildTokenResponse = { access_token: string; expires_at: string; child: ApiChildProfile };

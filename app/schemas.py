@@ -311,12 +311,14 @@ class ChildLinkRequest(BaseModel):
 
 class ChildProfileOut(BaseModel):
     """What the child's own app may know about itself. Deliberately no risk level,
-    no parent contact details, and no therapist notes (HANDOFF rule 5)."""
+    and no therapist notes (HANDOFF rule 5)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     full_name: str
+    grown_up_name: str | None = None
+    grown_up_phone: str | None = None
     therapist_name: str | None = None
 
 
