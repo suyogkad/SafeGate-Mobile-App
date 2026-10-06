@@ -73,7 +73,8 @@ export function DashboardPage() {
           </p>
           <ul className="mt-3 flex flex-col gap-2">
             {attention.map((a) => (
-              <li key={a.to}>
+              {/* Keyed on the text, not the link: several of these point at /safety. */}
+              <li key={a.text}>
                 <Link to={a.to} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3 text-[13.5px] text-text transition-colors hover:bg-tint-sand/40">
                   <span>{a.text}</span>
                   <span className="text-[12.5px] font-medium text-primary">Review</span>
