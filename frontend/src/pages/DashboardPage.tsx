@@ -72,8 +72,8 @@ export function DashboardPage() {
             <AlertTriangle className="size-4 text-alert" /> Needs attention
           </p>
           <ul className="mt-3 flex flex-col gap-2">
+            {/* Keyed on the text, not the link: several of these point at /safety. */}
             {attention.map((a) => (
-              {/* Keyed on the text, not the link: several of these point at /safety. */}
               <li key={a.text}>
                 <Link to={a.to} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3 text-[13.5px] text-text transition-colors hover:bg-tint-sand/40">
                   <span>{a.text}</span>
