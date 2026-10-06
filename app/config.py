@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     ai_companion_model: str = "openai/gpt-oss-120b"
     ai_classifier_model: str = "openai/gpt-oss-120b"
+    ai_transcription_model: str = "whisper-large-v3-turbo"
     ai_classifier_timeout_seconds: float = 20.0
 
     # Safety / alerts

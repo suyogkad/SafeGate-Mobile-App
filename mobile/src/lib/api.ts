@@ -32,6 +32,8 @@ export const API_URL: string =
   process.env.EXPO_PUBLIC_API_URL ?? (Constants.expoConfig?.extra as any)?.apiUrl ?? defaultBaseUrl();
 
 const TIMEOUT_MS = 15000;
+// Audio takes longer to send and transcribe than a JSON round trip.
+const UPLOAD_TIMEOUT_MS = 45000;
 
 let cached: StoredSession | null = null;
 let loaded = false;
@@ -104,6 +106,32 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   }
   if (!res.ok) throw new ApiError(res.status, await parseError(res));
   if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+/** Multipart upload. Content-Type is left to the runtime so the multipart boundary
+ * is set correctly; everything else matches `request`. */
+export async function upload<T>(path: string, form: FormData): Promise<T> {
+  const session = await currentSession();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: session ? { Authorization: `Bearer ${session.token}` } : {},
+      body: form,
+      signal: controller.signal,
+    });
+  } catch {
+    throw new OfflineError('No connection');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (res.status === 401) await endSession();
+  if (!res.ok) throw new ApiError(res.status, await parseError(res));
   return (await res.json()) as T;
 }
 

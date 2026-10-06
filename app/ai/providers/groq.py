@@ -17,6 +17,7 @@ import httpx
 from app.config import get_settings
 
 _API = "https://api.groq.com/openai/v1/chat/completions"
+_TRANSCRIBE_API = "https://api.groq.com/openai/v1/audio/transcriptions"
 _TIMEOUT = 30.0
 
 
@@ -56,3 +57,17 @@ class GroqProvider:
             )
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
+
+    async def transcribe(self, audio: bytes, filename: str, model: str) -> str:
+        """Turn a recording into text. The audio is forwarded and then dropped --
+        it is never written to disk or to the database (CLAUDE.md: collect the
+        minimum child data needed)."""
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.post(
+                _TRANSCRIBE_API,
+                headers={"Authorization": f"Bearer {get_settings().groq_api_key}"},
+                files={"file": (filename, audio)},
+                data={"model": model, "language": "en", "response_format": "json"},
+            )
+            response.raise_for_status()
+            return response.json().get("text", "").strip()

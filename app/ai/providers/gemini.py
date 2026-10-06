@@ -43,3 +43,6 @@ class GeminiProvider:
             config=config,
         )
         return response.text
+
+    async def transcribe(self, audio: bytes, filename: str, model: str) -> str:
+        raise NotImplementedError("Speech-to-text is not implemented for the Gemini provider")

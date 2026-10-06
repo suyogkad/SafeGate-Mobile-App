@@ -1,5 +1,5 @@
 /** The parent's children, and the companion the child talks to. */
-import { api } from '../lib/api';
+import { api, upload } from '../lib/api';
 
 export type ApiChild = {
   id: string;
@@ -44,4 +44,23 @@ export function companionReply(
   messages: { role: 'user' | 'assistant'; content: string }[],
 ): Promise<CompanionReply> {
   return api.post<CompanionReply>('/companion/reply', { child_id: childId, messages });
+}
+
+/** Turns a recording into text so the child can check it. The transcript is never
+ * sent onward by itself -- the child confirms or edits it first (HANDOFF rule 13). */
+export async function transcribeSpeech(childId: string, uri: string): Promise<string> {
+  const form = new FormData();
+  const name = uri.split('/').pop() || 'speech.m4a';
+  // React Native's FormData takes this shape for a file; the web build gets a Blob.
+  if (uri.startsWith('blob:') || uri.startsWith('data:')) {
+    const blob = await (await fetch(uri)).blob();
+    form.append('audio', blob, name);
+  } else {
+    form.append('audio', { uri, name, type: 'audio/m4a' } as unknown as Blob);
+  }
+  const { text } = await upload<{ text: string }>(
+    `/companion/transcribe?child_id=${encodeURIComponent(childId)}`,
+    form,
+  );
+  return text;
 }

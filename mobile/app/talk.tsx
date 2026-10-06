@@ -23,6 +23,7 @@ import { greeting, IDEAS, type TaskId } from '@/data/talk';
 import { companionReply } from '@/api/children';
 import { ApiError, OfflineError } from '@/lib/api';
 import { callNumber } from '@/lib/call';
+import { readAloud } from '@/lib/speak';
 import { useApp, useChildName } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -83,6 +84,13 @@ export default function Talk() {
 
       useApp.getState().addMessage({ from: 'companion', text: res.reply });
       setThinking(false);
+
+      // If the child spoke, answer out loud. Typing gets a typed answer, so the
+      // app never starts talking unprompted. "Read things aloud" can turn it off.
+      if (useApp.getState().spokeLast && useApp.getState().comfort.readAloud) {
+        readAloud(res.reply);
+      }
+      useApp.getState().setSpokeLast(false);
     } catch (e) {
       setThinking(false);
       if (e instanceof OfflineError) {

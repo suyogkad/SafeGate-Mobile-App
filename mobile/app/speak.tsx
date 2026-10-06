@@ -2,7 +2,9 @@
  * C10 Speak. A big record control and the bottom actions. Push-to-talk only (tap, or hold and let go).
  * While listening, soft rings pulse slowly out from the button (the familiar "I'm listening" cue); before and after,
  * everything is still. With the phone's reduce-motion on, the rings show but don't move. No waveform.
- * The demo records nothing. Voice is never the only way: "Type instead" is always there.
+ * Voice is never the only way: "Type instead" is always there (rule 13).
+ * The recording is sent for transcription and the child checks the words on "Is this right?"
+ * before anything is sent -- a transcription is never auto-sent.
  */
 import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
@@ -12,7 +14,11 @@ import { Screen } from '@/components/Screen';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
+import { transcribeSpeech } from '@/api/children';
+import { OfflineError } from '@/lib/api';
 import { useReduceMotion } from '@/lib/motion';
+import { useApp } from '@/store/app';
 import { radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -22,6 +28,10 @@ export default function Speak() {
   const { c } = useTheme();
   const [listening, setListening] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [working, setWorking] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const childId = useApp((s) => s.childId);
 
   useEffect(() => {
     if (!listening) return;
@@ -29,33 +39,72 @@ export default function Speak() {
     return () => clearInterval(id);
   }, [listening]);
 
-  // TODO(safegate): a real build records here and sends audio to speech-to-text.
   const stopped = useRef(false);
-  const stop = () => {
+  const stop = async () => {
     if (stopped.current) return;
     stopped.current = true;
-    router.replace('/is-this-right');
+    setListening(false);
+    live.current = false;
+    setWorking(true);
+
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri || !childId) throw new Error('nothing recorded');
+
+      const heard = await transcribeSpeech(childId, uri);
+      if (!heard.trim()) {
+        // Silence, or nothing it could make out. Let them try again rather than
+        // sending an empty message.
+        setProblem("I didn't hear any words. You can try again, or type instead.");
+        stopped.current = false;
+        setWorking(false);
+        return;
+      }
+      // The child checks and can fix the words before anything is sent (rule 13).
+      useApp.getState().setPendingSpeech(null);
+      router.replace({ pathname: '/is-this-right', params: { heard } });
+    } catch (e) {
+      setProblem(
+        e instanceof OfflineError
+          ? "I can't reach SafeGate right now. You can type instead."
+          : "I didn't catch that. You can try again, or type instead.",
+      );
+      stopped.current = false;
+      setWorking(false);
+    }
   };
 
   // Refs, not state: press handlers fire before a re-render, so they must see the latest value.
   const live = useRef(false);
   const holding = useRef(false);
 
-  const start = () => {
+  const start = async () => {
+    setProblem(null);
+    const granted = await AudioModule.requestRecordingPermissionsAsync();
+    if (!granted.granted) {
+      // No blame, no error code (rule 15): just the way out.
+      setProblem('SafeGate needs permission to use the microphone. You can type instead.');
+      return;
+    }
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
     live.current = true;
+    stopped.current = false;
     setSeconds(0);
     setListening(true);
   };
   // Tap (mouse, touch, keyboard, screen reader): first tap starts, next tap stops.
-  const onPress = () => (live.current ? stop() : start());
+  const onPress = () => void (live.current ? stop() : start());
   // Push-to-talk: hold to talk, let go to stop.
   const onLongPress = () => {
     if (live.current) return;
     holding.current = true;
-    start();
+    void start();
   };
   const onPressOut = () => {
-    if (holding.current) stop();
+    if (holding.current) void stop();
   };
 
   const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -72,8 +121,16 @@ export default function Speak() {
       contentStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
     >
       <T v="bodyLg" color="textMuted" center>
-        {listening ? 'Tap again, or let go, to stop' : 'Hold the button, or tap to start'}
+        {working ? 'Just a moment…' : listening ? 'Tap again, or let go, to stop' : 'Hold the button, or tap to start'}
       </T>
+
+      {problem ? (
+        <View accessibilityLiveRegion="polite" style={{ paddingHorizontal: space.lg }}>
+          <T v="body" color="textSecondary" center>
+            {problem}
+          </T>
+        </View>
+      ) : null}
 
       <View style={{ width: 156, height: 156, alignItems: 'center', justifyContent: 'center' }}>
         {listening ? <ListeningRings color={c.primary} /> : null}

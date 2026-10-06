@@ -91,6 +91,8 @@ interface AppState {
   doneToday: Record<DoneItem, boolean>;
   messages: ChatMessage[];
   pendingSpeech: string | null;
+  /** The child spoke their last message, so the reply is read back aloud. */
+  spokeLast: boolean;
   /** which task My task shows; the Talk card switches it to its own steps */
   taskId: TaskId;
   taskDone: boolean[];
@@ -129,6 +131,7 @@ interface AppState {
   markDone(item: DoneItem): void;
   addMessage(msg: Omit<ChatMessage, 'id'>): void;
   setPendingSpeech(t: string | null): void;
+  setSpokeLast(b: boolean): void;
   openTask(id: TaskId): void;
   toggleStep(i: number): void;
   resetTask(): void;
@@ -197,6 +200,7 @@ export const useApp = create<AppState>((set) => ({
   doneToday: { checkin: false, chat: false, calm: false, journal: false, tasks: false },
   messages: [],
   pendingSpeech: null,
+  spokeLast: false,
   taskId: 'school',
   taskDone: TASKS.school.steps.map(() => false),
   checkin: null,
@@ -219,6 +223,7 @@ export const useApp = create<AppState>((set) => ({
   goals: SEED_GOALS,
   profileEdits: {},
 
+  setSpokeLast: (spokeLast) => set({ spokeLast }),
   setAccount: (account) => set({ account }),
   setChildId: (childId) => set({ childId }),
 

@@ -339,3 +339,10 @@ class ChildDeviceOut(BaseModel):
     last_seen_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
+
+
+class TranscriptOut(BaseModel):
+    """What the child's recording was heard as. Shown back for them to check or
+    fix before anything is sent (HANDOFF rule 13)."""
+
+    text: str

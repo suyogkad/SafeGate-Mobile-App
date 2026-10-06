@@ -21,3 +21,10 @@ async def generate(
     return await provider.generate(
         system_prompt=system, messages=messages, model=model, max_tokens=max_tokens, json_mode=json_mode
     )
+
+
+async def transcribe(audio: bytes, filename: str, model: str | None = None) -> str:
+    """Speech to text. Goes through the provider layer like every other AI call."""
+    settings = get_settings()
+    provider = _PROVIDERS.get(settings.ai_provider, MockProvider)()
+    return await provider.transcribe(audio, filename, model or settings.ai_transcription_model)

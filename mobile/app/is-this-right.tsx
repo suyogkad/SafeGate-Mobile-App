@@ -11,17 +11,19 @@ import { Screen } from '@/components/Screen';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { T } from '@/components/ui/T';
-import { SPOKEN_TEXT } from '@/data/talk';
 import { useApp } from '@/store/app';
 import { space } from '@/theme/tokens';
 
 export default function IsThisRight() {
-  const unsure = useLocalSearchParams<{ unsure?: string }>().unsure === '1';
-  const [text, setText] = useState(SPOKEN_TEXT);
+  const params = useLocalSearchParams<{ unsure?: string; heard?: string }>();
+  const unsure = params.unsure === '1';
+  const [text, setText] = useState(params.heard ?? '');
   const inputRef = useRef<TextInput>(null);
 
   const send = () => {
     if (!text.trim()) return;
+    // Mark it as spoken so Talk reads the reply back aloud.
+    useApp.getState().setSpokeLast(true);
     useApp.getState().setPendingSpeech(text.trim());
     goBack('/talk');
   };

@@ -47,3 +47,8 @@ class MockProvider:
             return "School tasks can feel big sometimes. Taking it one tiny step at a time helps!"
 
         return "That sounds interesting! Tell me more about what you're thinking."
+
+    async def transcribe(self, audio: bytes, filename: str, model: str) -> str:
+        """Always "hears" the same sentence, so the Speak flow can be exercised
+        without a microphone or a real provider."""
+        return "I have homework and I don't know where to start"

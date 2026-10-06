@@ -5,24 +5,44 @@ check the child's message, then call the companion, then check the reply,
 then save the log. No step is skipped. Flagged messages never reach the AI at
 all -- they get a fixed script from scripts.py instead.
 """
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import safety, scripts
 from app.ai.prompts import COMPANION_SYSTEM_PROMPT
-from app.ai.providers import generate
+from app.ai.providers import generate, transcribe
 from app.alerts import send_alerts_for_risk
 from app.config import get_settings
 from app.db.models import Child, ConversationLog, RiskLevel, User, UserRole
 from app.db.session import get_db
-from app.schemas import CompanionReplyRequest, CompanionReplyResponse
+from app.schemas import CompanionReplyRequest, CompanionReplyResponse, TranscriptOut
 from app.security import Actor, get_actor, log_child_access
 
 router = APIRouter(prefix="/companion", tags=["companion"])
+logger = logging.getLogger(__name__)
+
+
+async def _resolve_child(db: AsyncSession, actor: Actor, child_id: uuid.UUID) -> Child:
+    """The child this request is for: either the child on their own linked phone,
+    or their parent on theirs. Nobody else reaches the companion."""
+    if actor.is_child:
+        child = actor.principal.child
+        if child.id != child_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this child")
+    else:
+        if actor.user.role != UserRole.PARENT:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this action")
+        child = (await db.execute(select(Child).where(Child.id == child_id))).scalar_one_or_none()
+        if child is None or child.parent_id != actor.user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this child")
+    if child.archived_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child not found")
+    return child
 
 
 async def _enforce_limits(db: AsyncSession, child_id: uuid.UUID, actor: Actor) -> None:
@@ -66,20 +86,7 @@ async def companion_reply(
     actor: Actor = Depends(get_actor),
     db: AsyncSession = Depends(get_db),
 ) -> CompanionReplyResponse:
-    # Either the child on their own linked phone, or their parent on theirs.
-    if actor.is_child:
-        child = actor.principal.child
-        if child.id != payload.child_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this child")
-    else:
-        if actor.user.role != UserRole.PARENT:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this action")
-        child_result = await db.execute(select(Child).where(Child.id == payload.child_id))
-        child = child_result.scalar_one_or_none()
-        if child is None or child.parent_id != actor.user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this child")
-    if child.archived_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child not found")
+    child = await _resolve_child(db, actor, payload.child_id)
 
     if payload.messages[-1].role != "user":
         raise HTTPException(
@@ -140,3 +147,44 @@ async def companion_reply(
         background_tasks.add_task(send_alerts_for_risk, child.id, risk)
 
     return CompanionReplyResponse(reply=reply, flagged=flagged, risk_level=risk)
+
+
+# Whisper's own ceiling is far higher, but a child's turn is seconds long: a cap
+# keeps a stuck recording from uploading a huge file and burning quota.
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+@router.post("/transcribe", response_model=TranscriptOut)
+async def transcribe_speech(
+    child_id: uuid.UUID,
+    audio: UploadFile = File(...),
+    actor: Actor = Depends(get_actor),
+    db: AsyncSession = Depends(get_db),
+) -> TranscriptOut:
+    """Turn a child's recording into text so they can check it before sending.
+
+    The transcript is NOT sent anywhere on its own: it goes back to the child, who
+    confirms or edits it on "Is this right?", and only then does it travel through
+    the usual defence layer as a normal message (HANDOFF rule 13 -- never auto-send
+    a transcription). The audio itself is forwarded to the provider and dropped;
+    it is never written to disk or to the database.
+    """
+    child = await _resolve_child(db, actor, child_id)
+
+    data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No audio was received")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="That recording is too long")
+
+    try:
+        text = await transcribe(data, audio.filename or "speech.m4a")
+    except Exception:
+        # The child sees a calm "I didn't catch that", never a provider error.
+        logger.warning("Transcription failed for child %s", child.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="I didn't catch that. Please try again."
+        )
+
+    await log_child_access(db, child.id, actor.user_id, "speech_transcribed", device_id=actor.device_id)
+    return TranscriptOut(text=text)

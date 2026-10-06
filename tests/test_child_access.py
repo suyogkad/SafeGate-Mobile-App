@@ -354,3 +354,76 @@ async def test_contact_details_are_kept_when_they_are_given(client):
     )
     assert created.status_code == 201
     assert created.json()["emergency_contact_phone"] == "+61 400 000 000"
+
+
+# ------------------------------------------------------------- speech to text ----
+
+
+@pytest.mark.asyncio
+async def test_a_child_can_turn_speech_into_text_to_check(client):
+    """The transcript comes back to the child so they can confirm or fix it. It is
+    never sent onward by itself (HANDOFF rule 13)."""
+    _, child, child_token = await _linked_child(client)
+
+    resp = await client.post(
+        f"/companion/transcribe?child_id={child['id']}",
+        files={"audio": ("speech.m4a", b"pretend-audio-bytes", "audio/m4a")},
+        headers=_h(child_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["text"]  # the mock provider always "hears" the same sentence
+    # Nothing was sent: no conversation turn was created by transcribing.
+    assert set(resp.json()) == {"text"}
+
+
+@pytest.mark.asyncio
+async def test_transcription_refuses_another_childs_id(client):
+    _, _, child_token = await _linked_child(client)
+    _, other_child = await _make_parent_with_child(client)
+
+    resp = await client.post(
+        f"/companion/transcribe?child_id={other_child['id']}",
+        files={"audio": ("speech.m4a", b"bytes", "audio/m4a")},
+        headers=_h(child_token),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_transcription_rejects_empty_and_oversized_audio(client):
+    _, child, child_token = await _linked_child(client)
+    url = f"/companion/transcribe?child_id={child['id']}"
+
+    empty = await client.post(url, files={"audio": ("s.m4a", b"", "audio/m4a")}, headers=_h(child_token))
+    assert empty.status_code == 400
+
+    huge = await client.post(
+        url, files={"audio": ("s.m4a", b"x" * (9 * 1024 * 1024), "audio/m4a")}, headers=_h(child_token)
+    )
+    assert huge.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_transcription_needs_a_session(client):
+    _, child = await _make_parent_with_child(client)
+    resp = await client.post(
+        f"/companion/transcribe?child_id={child['id']}",
+        files={"audio": ("s.m4a", b"bytes", "audio/m4a")},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_transcribing_is_recorded_in_the_audit_trail(client, db_session):
+    _, child, child_token = await _linked_child(client)
+    await client.post(
+        f"/companion/transcribe?child_id={child['id']}",
+        files={"audio": ("s.m4a", b"bytes", "audio/m4a")},
+        headers=_h(child_token),
+    )
+    actions = (
+        await db_session.execute(
+            select(ChildAccessLog.action).where(ChildAccessLog.child_id == uuid.UUID(child["id"]))
+        )
+    ).scalars().all()
+    assert "speech_transcribed" in actions
