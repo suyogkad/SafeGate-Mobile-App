@@ -19,8 +19,9 @@ import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
 import { Icon } from '@/components/ui/Icon';
 import { FACES } from '@/data/faces';
-import { PARENT, THERAPIST } from '@/data/people';
+import { THERAPIST } from '@/data/people';
 import { demoOnly } from '@/lib/call';
+import { signOutEverywhere } from '@/lib/auth';
 import { useApp, useChildName } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -41,6 +42,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function Account() {
   const { c } = useTheme();
   const name = useChildName();
+  const account = useApp((s) => s.account);
   const linked = useApp((s) => s.childLinked);
   const prefs = useApp((s) => s.alertPrefs);
   const setPref = useApp((s) => s.setAlertPref);
@@ -48,20 +50,20 @@ export default function Account() {
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Account" left="none" getHelp={false} />}>
       <Stagger>
-        <NavyPanel caption="PARENT ACCOUNT" title={PARENT.name} face={FACES.crownEgg}>
+        <NavyPanel caption="PARENT ACCOUNT" title={account?.name || 'Parent Account'} face={FACES.crownEgg}>
           <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-            {PARENT.email}
+            {account?.email || 'Registered Parent'}
           </T>
         </NavyPanel>
 
         <Section title="Your child">
           <ListRow
-            left={<Avatar initials={name.charAt(0).toUpperCase()} size={44} />}
-            title={name}
+            left={<Avatar initials={(name || 'C').charAt(0).toUpperCase()} size={44} />}
+            title={name || 'Child'}
             right={<Badge label={linked ? 'Phone linked' : 'Not linked yet'} tone={linked ? 'success' : 'warn'} />}
             chevron
             onPress={() => router.push((linked ? '/parent/child-comfort?from=home' : '/parent/link-child') as Href)}
-            label={`${name}. ${linked ? 'Phone linked' : 'Not linked yet'}. Open`}
+            label={`${name || 'Child'}. ${linked ? 'Phone linked' : 'Not linked yet'}. Open`}
           />
         </Section>
 
@@ -88,13 +90,13 @@ export default function Account() {
           />
           <SwitchRow title="Sessions and notes" subtitle="Bookings, reminders and notes from the therapist" on={prefs.sessions} onToggle={() => setPref('sessions', !prefs.sessions)} />
           <SwitchRow
-            title={`Tell me each time ${name} checks in or writes`}
+            title={`Tell me each time ${name || 'child'} checks in or writes`}
             subtitle="When off, these wait quietly in Notifications"
             on={prefs.eachActivity}
             onToggle={() => setPref('eachActivity', !prefs.eachActivity)}
           />
           <SwitchRow
-            title={`Daily summary of ${name}'s day`}
+            title={`Daily summary of ${name || 'child'}'s day`}
             subtitle="Around 7:00 pm"
             on={prefs.digest}
             onToggle={() => setPref('digest', !prefs.digest)}
@@ -113,8 +115,8 @@ export default function Account() {
           variant="text"
           iconLeft="log-out"
           style={{ alignSelf: 'center' }}
-          onPress={() => {
-            useApp.getState().signOut();
+          onPress={async () => {
+            await signOutEverywhere();
             router.replace('/welcome');
           }}
         />

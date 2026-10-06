@@ -153,9 +153,9 @@ class CompanionReplyResponse(BaseModel):
 class ChildCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     date_of_birth: datetime | None = None
-    emergency_contact_name: str = Field(min_length=1, max_length=255)
-    emergency_contact_phone: str = Field(min_length=1, max_length=50)
-    home_address: str = Field(min_length=1)
+    emergency_contact_name: str = Field(default="Parent", min_length=1, max_length=255)
+    emergency_contact_phone: str = Field(default="Not provided", min_length=1, max_length=50)
+    home_address: str = Field(default="Not provided", min_length=1)
     therapist_id: uuid.UUID | None = None
 
 

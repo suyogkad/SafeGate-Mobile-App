@@ -33,6 +33,7 @@ async function adoptFirstChild(): Promise<void> {
 }
 
 export async function parentSignIn(email: string, password: string): Promise<void> {
+  useApp.getState().signOut();
   const user = await apiSignIn(email, password);
   if (user.role !== 'parent') {
     await apiSignOut();
@@ -44,12 +45,16 @@ export async function parentSignIn(email: string, password: string): Promise<voi
 }
 
 export async function parentCreateAccount(name: string, email: string, password: string): Promise<void> {
+  useApp.getState().signOut();
   const user = await createParentAccount(name, email, password);
   useApp.getState().setAccount({ id: user.id, name: user.full_name, email: user.email, role: 'parent' });
   useApp.getState().signInParent();
+  useApp.getState().setChildId(null);
+  useApp.getState().updateChild({ name: '', feeling: null, hard: [], help: null, communicate: [] });
 }
 
 export async function therapistSignIn(email: string, password: string): Promise<void> {
+  useApp.getState().signOut();
   const user = await apiSignIn(email, password);
   if (user.role !== 'therapist') {
     await apiSignOut();

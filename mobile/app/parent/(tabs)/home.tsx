@@ -27,7 +27,6 @@ import { Tappable } from '@/components/ui/Tappable';
 import { FACES } from '@/data/faces';
 import { TODAY_WITH_ALEX } from '@/data/insights';
 import { mood as moodById } from '@/data/moods';
-import { PARENT } from '@/data/people';
 import { greeting } from '@/lib/time';
 import { useApp, useChildName, useUnreadCount } from '@/store/app';
 import { artTints, gutter, moodColors, radius, space } from '@/theme/tokens';
@@ -46,7 +45,9 @@ type TodayItem = {
 
 export default function ParentHome() {
   const { c } = useTheme();
-  const name = useChildName();
+  const name = useChildName() || 'Alex';
+  const account = useApp((s) => s.account);
+  const parentFirstName = account?.name ? account.name.split(' ')[0] : 'there';
   const calmMode = useApp((s) => s.calmMode);
   const calmAt = useApp((s) => s.calmAt);
   const helpRequest = useApp((s) => s.helpRequest);
@@ -118,7 +119,7 @@ export default function ParentHome() {
     needs.push({
       key: 'help',
       href: '/parent/alert?kind=help',
-      title: `${name} tapped “Let ${PARENT.first} know”`,
+      title: `${name} tapped “Let ${parentFirstName} know”`,
       meta: `“${helpRequest}” · Today, ${helpRequestAt ?? ''}`.trim(),
       tag: helpSeen ? 'SEEN' : 'NEEDS YOU',
       tone: helpSeen ? 'neutral' : 'warn',
@@ -142,10 +143,12 @@ export default function ParentHome() {
     { title: 'Link code', icon: 'link', href: '/parent/link-child' },
   ];
 
-  const initials = session.therapist
-    .split(' ')
-    .map((w) => w[0])
-    .join('');
+  const initials = session?.therapist
+    ? session.therapist
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+    : 'PS';
 
   return (
     <Screen inTabs padded={false} edgeToEdge>
@@ -171,7 +174,7 @@ export default function ParentHome() {
       >
         <View style={{ gap: space.sm }}>
           <T v="heading" color="onBrand" header>
-            {greeting(PARENT.first)}
+            {greeting(parentFirstName)}
           </T>
           <T v="bodyLg" color="onBrand">
             Here’s {name}’s day.
@@ -245,26 +248,43 @@ export default function ParentHome() {
 
         <View style={{ gap: space.md }}>
           <SectionHeader title="Coming up" />
-          <Card
-            tone="outlined"
-            padding={space.lg}
-            onPress={() => router.push('/parent/sessions')}
-            label={`Session with ${session.therapist}, ${session.short}, ${session.time}. Open sessions`}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl }}>
-              <Avatar initials={initials} size={64} />
-              <View style={{ flex: 1, gap: space.xs }}>
-                <T v="heading">Upcoming session</T>
-                <T v="section">{session.therapist}</T>
-                <T v="bodySm" color="textMuted">
-                  {session.short} · {session.time}
-                </T>
-                <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
-                  <Badge label={session.kind} />
+          {session ? (
+            <Card
+              tone="outlined"
+              padding={space.lg}
+              onPress={() => router.push('/parent/sessions')}
+              label={`Session with ${session.therapist}, ${session.short}, ${session.time}. Open sessions`}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl }}>
+                <Avatar initials={initials} size={64} />
+                <View style={{ flex: 1, gap: space.xs }}>
+                  <T v="heading">Upcoming session</T>
+                  <T v="section">{session.therapist}</T>
+                  <T v="bodySm" color="textMuted">
+                    {session.short} · {session.time}
+                  </T>
+                  <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
+                    <Badge label={session.kind} />
+                  </View>
                 </View>
               </View>
-            </View>
-          </Card>
+            </Card>
+          ) : (
+            <Card tone="outlined" padding={space.lg}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <View style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: c.surfaceTint, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="calendar" size={22} color={c.brand} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <T v="section">No upcoming sessions</T>
+                  <T v="bodySm" color="textMuted">
+                    Book a time with a therapist anytime
+                  </T>
+                </View>
+                <Button title="Book" size="small" onPress={() => router.push('/parent/find-therapist')} />
+              </View>
+            </Card>
+          )}
         </View>
 
         <View style={{ gap: space.md }}>

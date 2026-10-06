@@ -75,13 +75,15 @@ export const isoFromCaps = (short: string) => {
 export const slotKey = (date: string, start: number) => `${date}@${start}`;
 
 /** Which directory therapist the family's booked session is with ("Priya Shah" → "priya"). */
-export const sessionTherapistId = (session: Session) => THERAPISTS.find((t) => t.name === session.therapist)?.id ?? 'priya';
+export const sessionTherapistId = (session: Session | null) => (session ? THERAPISTS.find((t) => t.name === session.therapist)?.id ?? 'priya' : 'priya');
 
 /**
  * A therapist's bookings. Priya: her other clients + Alex's later session + Alex's next one when it's with her.
  * Sam and Mei: Alex's next one when it's with them (their other families' times are taken in their hours).
  */
-export function bookingsFor(session: Session, lengthMin: number, therapistId: Therapist['id'] = 'priya'): Booking[] {
+export function bookingsFor(session: Session | null, lengthMin: number, therapistId: Therapist['id'] = 'priya'): Booking[] {
+  const own = therapistId === 'priya' ? [...OTHER_BOOKINGS, ALEX_LATER] : [];
+  if (!session) return own;
   const next: Booking = {
     id: 'alex-next',
     clientId: 'alex',
@@ -90,7 +92,6 @@ export function bookingsFor(session: Session, lengthMin: number, therapistId: Th
     lengthMin,
     kind: session.kind,
   };
-  const own = therapistId === 'priya' ? [...OTHER_BOOKINGS, ALEX_LATER] : [];
   const withAlex = sessionTherapistId(session) === therapistId ? [next] : [];
   return [...own, ...withAlex].sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start);
 }

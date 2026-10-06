@@ -31,10 +31,12 @@ export default function Home() {
   const day = useApp((s) => s.day);
   const done = useApp((s) => s.doneToday);
   const rows = homeRows(day);
-  const initials = session.therapist
-    .split(' ')
-    .map((w) => w[0])
-    .join('');
+  const initials = session?.therapist
+    ? session.therapist
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+    : 'PS';
 
   return (
     <Screen inTabs padded={false} edgeToEdge>
@@ -79,13 +81,17 @@ export default function Home() {
         <Appear>
           <Timeline>
             {[
-              <CheckinCard
-                key="session"
-                caption={`SESSION · ${session.short}`}
-                title={`session with ${session.therapistFirst} at ${session.time.replace(' ', ' ')}`}
-                right={<Avatar initials={initials} size={72} />}
-                onPress={() => router.push('/my-sessions')}
-              />,
+              ...(session
+                ? [
+                    <CheckinCard
+                      key="session"
+                      caption={`SESSION · ${session.short}`}
+                      title={`session with ${session.therapistFirst} at ${session.time.replace(' ', ' ')}`}
+                      right={<Avatar initials={initials} size={72} />}
+                      onPress={() => router.push('/my-sessions')}
+                    />,
+                  ]
+                : []),
               ...rows.map((id) => {
                 const r = HOME_ROWS[id];
                 return (

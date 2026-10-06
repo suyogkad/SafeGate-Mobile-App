@@ -20,6 +20,7 @@ import { T } from '@/components/ui/T';
 import { PhotoAvatar } from '@/components/PhotoAvatar';
 import { PHOTOS } from '@/data/faces';
 import { PRACTITIONER } from '@/data/practice';
+import { signOutEverywhere } from '@/lib/auth';
 import { useApp } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -39,15 +40,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function TherapistAccount() {
   const { c } = useTheme();
+  const account = useApp((s) => s.account);
   const prefs = useApp((s) => s.therapistPrefs);
   const setPref = useApp((s) => s.setTherapistPref);
 
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Account" left="none" getHelp={false} />}>
       <Stagger>
-        <NavyPanel caption="PRACTITIONER" title={PRACTITIONER.name} lead={<PhotoAvatar photo={PHOTOS.priya.face} size={72} />}>
+        <NavyPanel caption="PRACTITIONER" title={account?.name || PRACTITIONER.name} lead={<PhotoAvatar photo={PHOTOS.priya.face} size={72} />}>
           <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-            {PRACTITIONER.role} · {PRACTITIONER.email}
+            {PRACTITIONER.role} · {account?.email || PRACTITIONER.email}
           </T>
         </NavyPanel>
 
@@ -100,8 +102,8 @@ export default function TherapistAccount() {
           variant="text"
           iconLeft="log-out"
           style={{ alignSelf: 'center' }}
-          onPress={() => {
-            useApp.getState().signOut();
+          onPress={async () => {
+            await signOutEverywhere();
             router.replace('/welcome');
           }}
         />

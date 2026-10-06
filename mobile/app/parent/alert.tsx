@@ -19,7 +19,7 @@ import { Divider, SectionHeader } from '@/components/ui/bits';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { EMERGENCY_NOTE_SHORT, helpline } from '@/data/helplines';
-import { PARENT, THERAPIST } from '@/data/people';
+import { THERAPIST } from '@/data/people';
 import { callNumber, contact } from '@/lib/call';
 import { calmLead } from '@/lib/calmLead';
 import { clockTime } from '@/lib/time';
@@ -29,8 +29,11 @@ import { useTheme } from '@/theme/useTheme';
 
 export default function Alert() {
   const { c } = useTheme();
-  const name = useChildName();
+  const name = useChildName() || 'Alex';
   const params = useLocalSearchParams<{ kind?: string }>();
+  const account = useApp((s) => s.account);
+  const parentName = account?.name || 'Parent';
+  const parentFirstName = account?.name ? account.name.split(' ')[0] : 'your grown-up';
   const calmMode = useApp((s) => s.calmMode);
   const calmAt = useApp((s) => s.calmAt);
   const helpRequest = useApp((s) => s.helpRequest);
@@ -81,7 +84,7 @@ export default function Alert() {
           </Fact>
         ) : null}
         <Fact label="What happened">
-          {calm ? `${name} wrote something that may mean they are not safe.` : `${name} tapped “Let ${PARENT.first} know” on “${helpRequest}” in Get help.`}
+          {calm ? `${name} wrote something that may mean they are not safe.` : `${name} tapped “Let ${parentFirstName} know” on “${helpRequest}” in Get help.`}
         </Fact>
         <Fact label={`What ${name} sees now`} last={!calm}>
           {calm
@@ -172,7 +175,7 @@ export default function Alert() {
       {/* P16 — confirm dialog: names who is asking and when. Nothing is actually contacted in the demo. */}
       <Dialog visible={confirm} onClose={() => setConfirm(false)} title={`Contact emergency services about ${name}?`}>
         <T v="body" color="textSecondary" center>
-          Only do this if {name} is in danger right now. SafeGate will record that you, {PARENT.name}, asked for this at {clockTime()}. {name} will be told
+          Only do this if {name} is in danger right now. SafeGate will record that you, {parentName}, asked for this at {clockTime()}. {name} will be told
           plainly what is happening.
         </T>
         <T v="bodySm" color="textMuted" center>
@@ -182,7 +185,7 @@ export default function Alert() {
           title="Yes, contact them"
           onPress={() => {
             // TODO(safegate): a real build sends this to the escalation service. The demo only records who and when.
-            useApp.getState().requestEmergency(PARENT.name);
+            useApp.getState().requestEmergency(parentName);
             setConfirm(false);
           }}
         />

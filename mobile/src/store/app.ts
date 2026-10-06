@@ -100,7 +100,7 @@ interface AppState {
   journal: JournalEntry[];
   child: ChildProfile;
   emergency: { by: string; at: string } | null;
-  session: Session;
+  session: Session | null;
   sharedWeek: boolean;
   day: DaySettings;
   notifications: Notification[];
@@ -202,12 +202,12 @@ export const useApp = create<AppState>((set) => ({
   helpSeen: false,
   comfort: DEFAULT_COMFORT,
   journal: [],
-  child: { name: CHILD_DEFAULT_NAME, age: '9 to 12', feeling: null, hard: [], help: null, communicate: [] },
+  child: { name: '', age: '9 to 12', feeling: null, hard: [], help: null, communicate: [] },
   emergency: null,
-  session: DEFAULT_SESSION,
+  session: null,
   sharedWeek: false,
   day: DEFAULT_DAY,
-  notifications: [...SEED_NOTIFICATIONS, ...SEED_THERAPIST_NOTIFICATIONS],
+  notifications: [],
   alertPrefs: { sessions: true, eachActivity: false, digest: true },
   therapistSignedIn: false,
   therapistPrefs: { bookings: true, sharing: true, notesReminders: true },
@@ -229,7 +229,7 @@ export const useApp = create<AppState>((set) => ({
             notifications: withNotification(s.notifications, {
               audience: 'parent',
               type: 'linked',
-              title: `${s.child.name}’s phone is linked`,
+              title: `${s.child.name || 'Child'}’s phone is linked`,
               detail: 'You can change their comfort settings any time.',
               href: '/parent/child-comfort?from=home',
               opens: 'Open comfort settings',
@@ -240,8 +240,32 @@ export const useApp = create<AppState>((set) => ({
     ),
   signInParent: () => set({ parentSignedIn: true }),
   signInTherapist: () => set({ therapistSignedIn: true }),
-  // Only the "who is signed in" flags reset, so the demo can switch sides without losing the story.
-  signOut: () => set({ childLinked: false, parentSignedIn: false, therapistSignedIn: false }),
+  signOut: () =>
+    set({
+      childLinked: false,
+      parentSignedIn: false,
+      therapistSignedIn: false,
+      account: null,
+      childId: null,
+      calmMode: 'off',
+      calmAt: null,
+      calmSeenAt: null,
+      afterCalm: false,
+      doneToday: { checkin: false, chat: false, calm: false, journal: false, tasks: false },
+      messages: [],
+      pendingSpeech: null,
+      checkin: null,
+      helpRequest: null,
+      helpRequestAt: null,
+      helpSeen: false,
+      comfort: DEFAULT_COMFORT,
+      journal: [],
+      child: { name: '', age: '9 to 12', feeling: null, hard: [], help: null, communicate: [] },
+      emergency: null,
+      session: null,
+      sharedWeek: false,
+      notifications: [],
+    }),
 
   setCalmMode: (mode) =>
     set((s) => {

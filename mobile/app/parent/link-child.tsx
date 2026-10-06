@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { FACES } from '@/data/faces';
+import { createChild } from '@/api/children';
 import { OfflineError } from '@/lib/api';
 import { linkCodeFor } from '@/lib/auth';
 import { useApp, useChildName } from '@/store/app';
@@ -20,9 +21,11 @@ import { useTheme } from '@/theme/useTheme';
 
 export default function LinkChild() {
   const { c } = useTheme();
-  const name = useChildName();
+  const name = useChildName() || 'Child';
   const [copied, setCopied] = useState(false);
   const childId = useApp((s) => s.childId);
+  const account = useApp((s) => s.account);
+  const childProfile = useApp((s) => s.child);
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,11 +33,23 @@ export default function LinkChild() {
   // Codes are short-lived and single-use, so one is fetched when the screen opens
   // and a fresh one replaces it on request (the old one stops working server-side).
   const fetchCode = useCallback(async () => {
-    if (!childId) return;
     setBusy(true);
     setError(null);
     try {
-      setCode((await linkCodeFor(childId)).code);
+      let activeChildId = childId;
+      if (!activeChildId) {
+        const childName = (childProfile.name || '').trim() || 'Alex';
+        const created = await createChild({
+          full_name: childName,
+          emergency_contact_name: account?.name || 'Parent',
+          emergency_contact_phone: 'Not provided',
+          home_address: 'Not provided',
+        });
+        activeChildId = created.id;
+        useApp.getState().setChildId(created.id);
+        useApp.getState().updateChild({ name: created.full_name });
+      }
+      setCode((await linkCodeFor(activeChildId)).code);
     } catch (e) {
       setError(
         e instanceof OfflineError
@@ -44,7 +59,7 @@ export default function LinkChild() {
     } finally {
       setBusy(false);
     }
-  }, [childId]);
+  }, [childId, childProfile.name, account?.name]);
 
   useEffect(() => {
     void fetchCode();

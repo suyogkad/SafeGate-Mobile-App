@@ -21,11 +21,13 @@ import { useTheme } from '@/theme/useTheme';
 export default function MySessions() {
   const { c } = useTheme();
   const session = useApp((s) => s.session);
-  const video = session.kind === 'Video call';
-  const initials = session.therapist
-    .split(' ')
-    .map((w) => w[0])
-    .join('');
+  const video = session?.kind === 'Video call';
+  const initials = session?.therapist
+    ? session.therapist
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+    : 'PS';
 
   return (
     <Screen header={<Header title="My sessions" fallback="/you" />}>
@@ -34,35 +36,51 @@ export default function MySessions() {
       </T>
 
       <Appear>
-        <Card tone="raised" r={24} padding={space.lg}>
-          <View style={{ flexDirection: 'row', gap: space.lg }}>
-            <Avatar initials={initials} size={64} />
-            <View style={{ flex: 1, gap: space.sm }}>
-              <Badge label={session.dateLabel.toUpperCase()} />
-              <T v="heading" header>
-                Session with {session.therapistFirst}
-              </T>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-                <Icon name={video ? 'video' : 'map-pin'} size={16} color={c.textMuted} />
-                <T v="bodySm" color="textSecondary">
-                  {session.time} · {session.kind}
+        {session ? (
+          <Card tone="raised" r={24} padding={space.lg}>
+            <View style={{ flexDirection: 'row', gap: space.lg }}>
+              <Avatar initials={initials} size={64} />
+              <View style={{ flex: 1, gap: space.sm }}>
+                <Badge label={session.dateLabel.toUpperCase()} />
+                <T v="heading" header>
+                  Session with {session.therapistFirst}
                 </T>
-              </View>
-              {video ? (
-                <View style={{ gap: space.xs, marginTop: space.xs }}>
-                  <Button title="Join" size="small" icon="arrow-right" disabled label={`Join. Opens at ${session.joinOpens}`} />
-                  <T v="caption" color="textMuted">
-                    Join opens at {session.joinOpens}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
+                  <Icon name={video ? 'video' : 'map-pin'} size={16} color={c.textMuted} />
+                  <T v="bodySm" color="textSecondary">
+                    {session.time} · {session.kind}
                   </T>
                 </View>
-              ) : (
-                <View style={{ backgroundColor: c.surface, borderRadius: radius.field, padding: space.md, marginTop: space.xs }}>
-                  <T v="bodySmMedium">{session.place}</T>
-                </View>
-              )}
+                {video ? (
+                  <View style={{ gap: space.xs, marginTop: space.xs }}>
+                    <Button title="Join" size="small" icon="arrow-right" disabled label={`Join. Opens at ${session.joinOpens}`} />
+                    <T v="caption" color="textMuted">
+                      Join opens at {session.joinOpens}
+                    </T>
+                  </View>
+                ) : (
+                  <View style={{ backgroundColor: c.surface, borderRadius: radius.field, padding: space.md, marginTop: space.xs }}>
+                    <T v="bodySmMedium">{session.place}</T>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
-        </Card>
+          </Card>
+        ) : (
+          <Card tone="raised" r={24} padding={space.lg}>
+            <View style={{ alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: c.surfaceTint, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="calendar" size={26} color={c.brand} />
+              </View>
+              <T v="heading" center>
+                No session booked yet
+              </T>
+              <T v="bodySm" color="textMuted" center>
+                Your grown-up can book your next session with your therapist.
+              </T>
+            </View>
+          </Card>
+        )}
       </Appear>
 
       <View style={{ gap: space.md }}>

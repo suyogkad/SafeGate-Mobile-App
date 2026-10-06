@@ -21,7 +21,7 @@ export default function Share() {
   const name = useChildName();
   const shared = useApp((s) => s.sharedWeek);
   const session = useApp((s) => s.session);
-  const weekday = session.dateLabel.split(' ')[0];
+  const weekday = session ? session.dateLabel.split(' ')[0] : 'your next';
 
   return (
     <Screen backdrop="brand" contentStyle={{ flexGrow: 1, justifyContent: 'center' }}>
