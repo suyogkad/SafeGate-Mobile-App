@@ -19,9 +19,9 @@ export interface Child {
   therapist_id: string | null;
   full_name: string;
   date_of_birth: string | null;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
-  home_address: string;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  home_address: string | null;
   created_at: string;
   therapist_name: string | null;
   archived_at: string | null;

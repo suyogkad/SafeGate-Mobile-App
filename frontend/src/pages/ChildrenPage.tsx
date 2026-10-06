@@ -88,7 +88,9 @@ export function ChildrenPage() {
                         <Badge tone="sand">Unassigned</Badge>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-[13px] text-text-muted">{c.emergency_contact_phone}</td>
+                    <td className="px-5 py-3.5 text-[13px] text-text-muted">
+                      {c.emergency_contact_phone || <span className="text-text-muted/70">Not recorded</span>}
+                    </td>
                   </tr>
                 );
               })}

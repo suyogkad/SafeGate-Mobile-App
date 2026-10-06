@@ -7,9 +7,9 @@ export type ApiChild = {
   therapist_id: string | null;
   full_name: string;
   date_of_birth: string | null;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
-  home_address: string;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  home_address: string | null;
   created_at: string;
   therapist_name: string | null;
   archived_at: string | null;
@@ -19,11 +19,13 @@ export function listChildren(): Promise<ApiChild[]> {
   return api.get<ApiChild[]>('/children');
 }
 
+/** Only the child's name is required. The setup flow does not ask for an emergency
+ * contact or an address, and inventing one would look like real data later. */
 export function createChild(input: {
   full_name: string;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
-  home_address: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  home_address?: string;
   therapist_id?: string | null;
 }): Promise<ApiChild> {
   return api.post<ApiChild>('/children', input);

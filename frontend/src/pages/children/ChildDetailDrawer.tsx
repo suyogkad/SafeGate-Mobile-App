@@ -68,13 +68,15 @@ function ChildEditForm({ child }: { child: Child }) {
   const { data: therapists } = useUsers("therapist");
   const update = useAdminUpdateChild();
   const [name, setName] = useState(child.full_name);
-  const [contactName, setContactName] = useState(child.emergency_contact_name);
-  const [contactPhone, setContactPhone] = useState(child.emergency_contact_phone);
-  const [address, setAddress] = useState(child.home_address);
+  const [contactName, setContactName] = useState(child.emergency_contact_name ?? "");
+  const [contactPhone, setContactPhone] = useState(child.emergency_contact_phone ?? "");
+  const [address, setAddress] = useState(child.home_address ?? "");
   const [therapistId, setTherapistId] = useState(child.therapist_id ?? "");
 
   const assignable = (therapists ?? []).filter((t) => t.is_active && t.therapist_status === "approved");
-  const valid = name.trim() && contactName.trim() && contactPhone.trim() && address.trim();
+  // Only the name is required: the rest may legitimately be missing, and an admin
+  // should be able to save a correction without inventing the rest.
+  const valid = Boolean(name.trim());
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -83,9 +85,11 @@ function ChildEditForm({ child }: { child: Child }) {
         id: child.id,
         input: {
           full_name: name.trim(),
-          emergency_contact_name: contactName.trim(),
-          emergency_contact_phone: contactPhone.trim(),
-          home_address: address.trim(),
+          // Blank means "not recorded", so leave it out rather than sending an
+          // empty string the API would reject.
+          emergency_contact_name: contactName.trim() || undefined,
+          emergency_contact_phone: contactPhone.trim() || undefined,
+          home_address: address.trim() || undefined,
           therapist_id: therapistId || null,
         },
       });
@@ -137,8 +141,16 @@ export function ChildDetailDrawer({
       <div className="divide-y divide-border rounded-2xl border border-border px-4">
         <InfoRow icon={UserIcon} label="Parent" value={parent?.full_name ?? "Unknown"} />
         <InfoRow icon={Stethoscope} label="Assigned therapist" value={therapist?.full_name ?? "Not yet assigned"} />
-        <InfoRow icon={Phone} label="Emergency contact" value={`${child.emergency_contact_name} · ${child.emergency_contact_phone}`} />
-        <InfoRow icon={MapPin} label="Home address" value={child.home_address} />
+        <InfoRow
+          icon={Phone}
+          label="Emergency contact"
+          value={
+            child.emergency_contact_phone
+              ? [child.emergency_contact_name, child.emergency_contact_phone].filter(Boolean).join(" · ")
+              : "Not recorded"
+          }
+        />
+        <InfoRow icon={MapPin} label="Home address" value={child.home_address || "Not recorded"} />
         <InfoRow icon={CalendarDays} label="On the platform since" value={formatDate(child.created_at)} />
       </div>
 

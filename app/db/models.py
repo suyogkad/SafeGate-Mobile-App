@@ -100,9 +100,12 @@ class Child(Base):
     )
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     date_of_birth: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    emergency_contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    emergency_contact_phone: Mapped[str] = mapped_column(String(50), nullable=False)
-    home_address: Mapped[str] = mapped_column(Text, nullable=False)
+    # Optional: the parent setup flow does not ask for these, and a placeholder
+    # string in an emergency contact field reads like real data to whoever needs
+    # it most. Absent is recorded as absent.
+    emergency_contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    emergency_contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    home_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

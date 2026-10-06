@@ -311,3 +311,46 @@ async def test_companion_use_from_a_phone_is_logged_against_the_device(client, d
     ).scalars().first()
     assert row is not None
     assert row.accessed_by_device_id is not None and row.accessed_by_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_a_child_can_be_created_without_contact_details(client):
+    """The parent setup flow never asks for an emergency contact or an address, so
+    creating a child must not require them -- and must not invent them either. A
+    placeholder sitting in an emergency contact field reads like a real number to
+    whoever needs it most."""
+    from tests.test_sessions import _login, _register
+
+    _, email, password = await _register(client, role="parent")
+    token = await _login(client, email, password)
+
+    created = await client.post("/children", json={"full_name": "Only A Name"}, headers=_auth_headers(token))
+    assert created.status_code == 201, created.text
+
+    body = created.json()
+    assert body["emergency_contact_name"] is None
+    assert body["emergency_contact_phone"] is None
+    assert body["home_address"] is None
+    # Specifically not the old placeholders.
+    assert "Not provided" not in str(body)
+
+
+@pytest.mark.asyncio
+async def test_contact_details_are_kept_when_they_are_given(client):
+    from tests.test_sessions import _login, _register
+
+    _, email, password = await _register(client, role="parent")
+    token = await _login(client, email, password)
+
+    created = await client.post(
+        "/children",
+        json={
+            "full_name": "With Details",
+            "emergency_contact_name": "Jordan Lee",
+            "emergency_contact_phone": "+61 400 000 000",
+            "home_address": "1 Test St, Sydney",
+        },
+        headers=_auth_headers(token),
+    )
+    assert created.status_code == 201
+    assert created.json()["emergency_contact_phone"] == "+61 400 000 000"

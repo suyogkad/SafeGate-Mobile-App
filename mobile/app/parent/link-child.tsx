@@ -41,9 +41,6 @@ export default function LinkChild() {
         const childName = (childProfile.name || '').trim() || 'Alex';
         const created = await createChild({
           full_name: childName,
-          emergency_contact_name: account?.name || 'Parent',
-          emergency_contact_phone: 'Not provided',
-          home_address: 'Not provided',
         });
         activeChildId = created.id;
         useApp.getState().setChildId(created.id);
