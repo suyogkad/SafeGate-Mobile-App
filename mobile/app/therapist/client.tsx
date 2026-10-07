@@ -13,7 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { goBack } from '@/components/Header';
+import { goBack, Header } from '@/components/Header';
 import { MoodChart } from '@/components/MoodChart';
 import { Screen } from '@/components/Screen';
 import { SessionCard, withComma } from '@/components/SessionCard';
@@ -28,7 +28,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { WEEK, SHARED } from '@/data/insights';
-import { ALEX_PAST, CLIENTS, OTHER_CLIENT_SHARING, type ClientId } from '@/data/practice';
+import { ALEX_PAST, clientArt, CLIENTS, OTHER_CLIENT_SHARING, type ClientId } from '@/data/practice';
 import { contact } from '@/lib/call';
 import { latestShared, useClients } from '@/lib/clients';
 import { dayLabel, DEMO_TODAY, timeLabel } from '@/lib/schedule';
@@ -106,12 +106,25 @@ export default function Client() {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string; tab?: string }>();
-  const id: ClientId = params.id && params.id in CLIENTS ? (params.id as ClientId) : 'alex';
+  const id: ClientId = params.id ?? '';
   const [tab, setTab] = useState<Tab>(TABS.find((t) => t === params.tab) ?? 'Overview');
-  const summary = useClients().find((cl) => cl.id === id)!;
-  const art = CLIENTS[id];
+  const clients = useClients();
+  const summary = clients.find((cl) => cl.id === id);
+  const art = clientArt(id);
   const childName = useChildName();
+
+  if (!summary) {
+    return (
+      <Screen backdrop="brand" header={<Header title="Client" left="back" getHelp={false} fallback="/therapist/clients" />}>
+        <T v="body" color="textMuted">
+          {clients.length === 0 ? 'Loading…' : 'This client is not in your list.'}
+        </T>
+      </Screen>
+    );
+  }
+
   const name = summary.name;
+  const parentFirst = summary.parentFirst || 'The family';
 
   return (
     <Screen padded={false} edgeToEdge backdrop="brand">
@@ -134,21 +147,28 @@ export default function Client() {
               {name}
             </T>
             <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-              {art.age} · Parent: {art.parent}
+              {[summary.age, summary.parent ? `Parent: ${summary.parent}` : null].filter(Boolean).join(' · ') ||
+                'No details yet'}
             </T>
             <T v="bodySm" color="onBrand" style={{ opacity: 0.9 }}>
               {summary.next ? `Next: ${summary.next}` : 'No session booked'}
             </T>
           </View>
-          <Button title={`Message ${art.parentFirst}`} size="small" variant="onBrand" iconLeft="message-square" onPress={() => contact('message', art.parent)} />
+          <Button
+            title={`Message ${summary.parentFirst || 'the family'}`}
+            size="small"
+            variant="onBrand"
+            iconLeft="message-square"
+            onPress={() => contact('message', summary.parent)}
+          />
         </View>
       </View>
 
       <View style={{ paddingHorizontal: gutter, gap: space.xl }}>
         <Segmented label={`About ${name}`} options={TABS} value={tab} onChange={setTab} />
         <Stagger key={tab}>
-          {tab === 'Overview' ? <Overview id={id} name={name} /> : null}
-          {tab === 'Shared' ? <Shared id={id} name={name} childName={childName} /> : null}
+          {tab === 'Overview' ? <Overview id={id} name={name} parentFirst={parentFirst} /> : null}
+          {tab === 'Shared' ? <Shared id={id} name={name} childName={childName} parentFirst={parentFirst} /> : null}
           {tab === 'Sessions' ? <Sessions id={id} name={name} /> : null}
         </Stagger>
       </View>
@@ -156,9 +176,9 @@ export default function Client() {
   );
 }
 
-function Overview({ id, name }: { id: ClientId; name: string }) {
+function Overview({ id, name, parentFirst }: { id: ClientId; name: string; parentFirst: string }) {
   const { c } = useTheme();
-  const goals = useApp((s) => s.goals[id]);
+  const goals = useApp((s) => s.goals[id]) ?? [];
   const child = useApp((s) => s.child);
   const comfort = useApp((s) => s.comfort);
   const notes = useApp((s) => s.sessionNotes);
@@ -227,13 +247,13 @@ function Overview({ id, name }: { id: ClientId; name: string }) {
             <Fact label={`How ${name} communicates best`} value={answer(child.communicate)} last />
           </Card>
           <T v="bodySm" color="textMuted">
-            From {CLIENTS.alex.parentFirst}’s answers when setting up SafeGate.
+            From {parentFirst}’s answers when setting up SafeGate.
           </T>
         </View>
       ) : (
         <Card tone="raised" padding={space.lg}>
           <T v="body" color="textSecondary">
-            {CLIENTS[id].parentFirst}’s answers about {name} show here once the family joins SafeGate.
+            {parentFirst}’s answers about {name} show here once the family joins SafeGate.
           </T>
         </Card>
       )}
@@ -242,12 +262,12 @@ function Overview({ id, name }: { id: ClientId; name: string }) {
         <View style={{ gap: space.md }}>
           <SectionHeader title="Comfort settings" />
           <Card tone="raised" padding={space.lg}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }} accessible accessibilityLabel={`Comfort settings: ${comfortLine}. Only ${name} and ${CLIENTS.alex.parentFirst} can change these.`}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }} accessible accessibilityLabel={`Comfort settings: ${comfortLine}. Only ${name} and ${parentFirst} can change these.`}>
               <Icon name="sliders" size={22} color={c.text} />
               <View style={{ flex: 1, gap: 2 }}>
                 <T v="bodyLg">{comfortLine.charAt(0).toUpperCase() + comfortLine.slice(1)}</T>
                 <T v="bodySm" color="textMuted">
-                  Only {name} and {CLIENTS.alex.parentFirst} can change these.
+                  Only {name} and {parentFirst} can change these.
                 </T>
               </View>
               <Icon name="lock" size={16} color={c.textMuted} />
@@ -270,7 +290,7 @@ function Overview({ id, name }: { id: ClientId; name: string }) {
   );
 }
 
-function Shared({ id, name, childName }: { id: ClientId; name: string; childName: string }) {
+function Shared({ id, name, childName, parentFirst }: { id: ClientId; name: string; childName: string; parentFirst: string }) {
   const { c } = useTheme();
   // Looking at what the family shared is reading it: "Jordan shared Alex's week" leaves Needs attention.
   useEffect(() => {
@@ -281,9 +301,8 @@ function Shared({ id, name, childName }: { id: ClientId; name: string; childName
   const calmAt = useApp((s) => s.calmAt);
   const calmSeenAt = useApp((s) => s.calmSeenAt);
   const emergency = useApp((s) => s.emergency);
-  const parentFirst = CLIENTS[id].parentFirst;
   const alex = id === 'alex';
-  const other = alex ? null : OTHER_CLIENT_SHARING[id];
+  const other = alex ? null : (OTHER_CLIENT_SHARING[id] ?? null);
   const weekShared = alex ? sharedWeek : !!other?.sharedThisWeek;
 
   return (
@@ -322,7 +341,7 @@ function Shared({ id, name, childName }: { id: ClientId; name: string; childName
         ) : (
           <Card tone="raised" r={24} padding={space.xl}>
             <View style={{ alignItems: 'center', gap: space.md }}>
-              <FaceCircle face={CLIENTS[id].face} tint={CLIENTS[id].tint} size={72} />
+              <FaceCircle face={clientArt(id).face} tint={clientArt(id).tint} size={72} />
               <T v="heading" center>
                 {parentFirst} hasn’t shared this week yet
               </T>
