@@ -181,6 +181,7 @@ class ChildOut(BaseModel):
     home_address: str | None
     created_at: datetime
     therapist_name: str | None = None
+    parent_name: str | None = None
     archived_at: datetime | None = None
 
 

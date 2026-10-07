@@ -12,6 +12,7 @@ export type ApiChild = {
   home_address: string | null;
   created_at: string;
   therapist_name: string | null;
+  parent_name: string | null;
   archived_at: string | null;
 };
 

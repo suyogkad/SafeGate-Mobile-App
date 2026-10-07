@@ -555,3 +555,32 @@ async def test_a_parent_cannot_end_another_familys_sessions(client):
     other_parent_token, _ = await _make_parent_with_child(client)
     resp = await client.post(f"/children/{child['id']}/devices/end-all", headers=_auth_headers(other_parent_token))
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_therapist_sees_their_caseload_with_the_familys_name(client):
+    """A therapist cannot look up users (that is admin-only), so the names they
+    legitimately need travel with the child record."""
+    from tests.test_sessions import _login, _register
+
+    therapist, t_email, t_pw = await _register(client, role="therapist")
+    t_token = await _login(client, t_email, t_pw)
+    parent_token, child = await _make_parent_with_child(client, therapist_id=therapist["id"])
+
+    mine = (await client.get("/children", headers=_auth_headers(t_token))).json()
+    assert [c["id"] for c in mine] == [child["id"]]
+    assert mine[0]["parent_name"]  # the family's name, for the client card
+    assert mine[0]["therapist_name"]
+
+
+@pytest.mark.asyncio
+async def test_a_therapist_sees_only_children_assigned_to_them(client):
+    from tests.test_sessions import _login, _register
+
+    therapist, t_email, t_pw = await _register(client, role="therapist")
+    t_token = await _login(client, t_email, t_pw)
+    await _make_parent_with_child(client, therapist_id=therapist["id"])
+    await _make_parent_with_child(client)  # someone else's child, unassigned
+
+    mine = (await client.get("/children", headers=_auth_headers(t_token))).json()
+    assert len(mine) == 1

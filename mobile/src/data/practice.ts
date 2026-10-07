@@ -19,7 +19,9 @@ export const PRACTITIONER = {
 
 export const DEMO_DAY = { label: 'Sunday 11 October', short: 'Sun 11 Oct' } as const;
 
-export type ClientId = 'alex' | 'mia' | 'leo';
+/** A client's id. Real clients come from the backend with real ids; the demo data
+ * below still uses 'alex' | 'mia' | 'leo', which are valid strings. */
+export type ClientId = string;
 
 export type Client = {
   id: ClientId;

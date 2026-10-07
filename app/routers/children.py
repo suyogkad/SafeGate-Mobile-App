@@ -16,16 +16,21 @@ router = APIRouter(prefix="/children", tags=["children"])
 
 
 async def _enrich(db: AsyncSession, children: list[Child]) -> list[ChildOut]:
-    """Attaches the assigned therapist's name -- a parent has no other way to
-    see it, since user lookup is otherwise admin-only.
+    """Attaches the assigned therapist's and the parent's names.
+
+    Neither a parent nor a therapist can look up users (that is admin-only), so the
+    names each of them legitimately needs have to travel with the child record: the
+    parent needs the therapist's name, the therapist needs the family's.
     """
-    therapist_ids = {c.therapist_id for c in children if c.therapist_id is not None}
+    wanted = {c.therapist_id for c in children if c.therapist_id is not None} | {c.parent_id for c in children}
     names: dict = {}
-    if therapist_ids:
-        result = await db.execute(select(User.id, User.full_name).where(User.id.in_(therapist_ids)))
+    if wanted:
+        result = await db.execute(select(User.id, User.full_name).where(User.id.in_(wanted)))
         names = dict(result.all())
     return [
-        ChildOut.model_validate(c).model_copy(update={"therapist_name": names.get(c.therapist_id)})
+        ChildOut.model_validate(c).model_copy(
+            update={"therapist_name": names.get(c.therapist_id), "parent_name": names.get(c.parent_id)}
+        )
         for c in children
     ]
 

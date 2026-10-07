@@ -11,14 +11,13 @@ import { Header } from '@/components/Header';
 import { NavyPanel } from '@/components/NavyPanel';
 import { Screen } from '@/components/Screen';
 import { Stagger } from '@/components/ui/Appear';
+import { Avatar } from '@/components/ui/bits';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { ListRow } from '@/components/ui/ListRow';
 import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
-import { PhotoAvatar } from '@/components/PhotoAvatar';
-import { PHOTOS } from '@/data/faces';
 import { PRACTITIONER } from '@/data/practice';
 import { signOutEverywhere } from '@/lib/auth';
 import { useApp } from '@/store/app';
@@ -47,9 +46,13 @@ export default function TherapistAccount() {
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Account" left="none" getHelp={false} />}>
       <Stagger>
-        <NavyPanel caption="PRACTITIONER" title={account?.name || PRACTITIONER.name} lead={<PhotoAvatar photo={PHOTOS.priya.face} size={72} />}>
+        <NavyPanel
+          caption="PRACTITIONER"
+          title={account?.name || 'Your practice'}
+          lead={<Avatar initials={(account?.name || 'T').charAt(0).toUpperCase()} size={72} />}
+        >
           <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-            {PRACTITIONER.role} · {account?.email || PRACTITIONER.email}
+            {account?.email || 'Signed in'}
           </T>
         </NavyPanel>
 

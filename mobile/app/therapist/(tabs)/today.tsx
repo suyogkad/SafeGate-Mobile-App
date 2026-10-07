@@ -27,7 +27,7 @@ import { PHOTOS } from '@/data/faces';
 import { NOTIFICATION_LOOK, type Notification } from '@/data/notifications';
 import { CLIENTS, DEMO_DAY, PRACTITIONER } from '@/data/practice';
 import { addDays, bookableSlots, dayLabel, dayShort, DEMO_TODAY, timeLabel, weekStart } from '@/lib/schedule';
-import { needsAttention } from '@/lib/clients';
+import { needsAttention, useClients, useTherapistSessions } from '@/lib/clients';
 import { greeting } from '@/lib/time';
 import { isOpenUrgent, useApp, useBookings, useChildName, useUnreadCount } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
@@ -79,7 +79,13 @@ export default function TherapistToday() {
   // From Priya's calendar (her hours + bookings), so a parent's booking or a change in My hours shows up here live.
   const bookings = useBookings();
   const availability = useApp((s) => s.availability);
-  const comingUp = bookings.filter((bk) => bk.date > DEMO_TODAY).slice(0, 3);
+  // The therapist's real upcoming sessions, soonest first.
+  const sessions = useTherapistSessions();
+  const clients = useClients();
+  const comingUp = sessions
+    .filter((s) => s.status === 'booked' && new Date(s.start_time).getTime() > Date.now())
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    .slice(0, 3);
   const monday = weekStart(addDays(DEMO_TODAY, 1));
   const openTimes = bookableSlots(availability, bookings, monday, addDays(monday, 6));
 
@@ -159,19 +165,28 @@ export default function TherapistToday() {
 
         <View style={{ gap: space.md }}>
           <SectionHeader title="Coming up" action="Calendar" actionLabel="Open the calendar" onAction={() => router.push('/therapist/calendar')} />
-          {comingUp.map((b, i) => {
-            const client = CLIENTS[b.clientId];
-            const who = b.clientId === 'alex' ? name : client.name;
+          {comingUp.length === 0 ? (
+            <T v="body" color="textMuted">
+              No sessions booked yet. Families book from their own app.
+            </T>
+          ) : null}
+          {comingUp.map((s, i) => {
+            const at = new Date(s.start_time);
+            const date = at.toISOString().slice(0, 10);
+            const start = at.getHours() * 60 + at.getMinutes();
+            const who = s.child_name ?? 'Client';
+            const parent = clients.find((c) => c.id === s.child_id)?.parent;
+            const kind = s.video_room_url ? 'Video call' : 'Session';
             return (
-              <Appear key={b.id} delay={i * 60}>
+              <Appear key={s.id} delay={i * 60}>
                 <SessionCard
-                  date={b.date}
-                  start={b.start}
+                  date={date}
+                  start={start}
                   initials={who.charAt(0)}
-                  tag={b.kind.toUpperCase()}
-                  line={`${who} · with ${client.parent}`}
-                  label={`${withComma(dayLabel(b.date))}, ${timeLabel(b.start)}. ${who}, ${b.kind.toLowerCase()}, with ${client.parent}. Open the session`}
-                  onPress={() => router.push(`/therapist/session?id=${b.id}` as Href)}
+                  tag={kind.toUpperCase()}
+                  line={parent ? `${who} · with ${parent}` : who}
+                  label={`${withComma(dayLabel(date))}, ${timeLabel(start)}. ${who}, ${kind.toLowerCase()}${parent ? `, with ${parent}` : ''}. Open the session`}
+                  onPress={() => router.push(`/therapist/session?id=${s.id}` as Href)}
                 />
               </Appear>
             );
