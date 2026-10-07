@@ -64,3 +64,28 @@ export async function transcribeSpeech(childId: string, uri: string): Promise<st
   );
   return text;
 }
+
+/** A phone the child can use SafeGate from. */
+export type ApiChildDevice = {
+  id: string;
+  child_id: string;
+  kind: 'linked' | 'parent_hosted';
+  label: string | null;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+export function listChildDevices(childId: string): Promise<ApiChildDevice[]> {
+  return api.get<ApiChildDevice[]>(`/children/${childId}/devices`);
+}
+
+/** Stops the child using SafeGate anywhere, straight away. The conversation is kept:
+ * ending a sitting must not erase what the parent needs to read. */
+export function endAllChildSessions(childId: string): Promise<void> {
+  return api.post<void>(`/children/${childId}/devices/end-all`);
+}
+
+export function revokeChildDevice(childId: string, deviceId: string): Promise<void> {
+  return api.post<void>(`/children/${childId}/devices/${deviceId}/revoke`);
+}

@@ -4,6 +4,9 @@ import {
   adminCancelSession,
   adminUpdateChild,
   archiveChild,
+  endAllChildSessions,
+  listChildDevices,
+  revokeChildDevice,
   restoreChild,
   getPlatformSettings,
   getSafetyStats,
@@ -83,6 +86,26 @@ export function useArchiveChild(restore = false) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["children"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-actions"] });
+    },
+  });
+}
+
+export function useChildDevices(childId: string | undefined) {
+  return useQuery({
+    queryKey: ["child-devices", childId],
+    queryFn: () => listChildDevices(childId as string),
+    enabled: Boolean(childId),
+  });
+}
+
+export function useEndChildSessions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ childId, deviceId }: { childId: string; deviceId?: string }) =>
+      deviceId ? revokeChildDevice(childId, deviceId) : endAllChildSessions(childId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["child-devices"] });
       queryClient.invalidateQueries({ queryKey: ["admin-actions"] });
     },
   });

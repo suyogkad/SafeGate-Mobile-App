@@ -14,6 +14,7 @@ import { Avatar } from '@/components/ui/bits';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { EndSessions } from '@/components/EndSessions';
 import { ListRow } from '@/components/ui/ListRow';
 import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
@@ -41,6 +42,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function Account() {
   const { c } = useTheme();
   const name = useChildName();
+  const childId = useApp((s) => s.childId);
   const therapistFull = useTherapistFullName();
   const account = useApp((s) => s.account);
   const linked = useApp((s) => s.childLinked);
@@ -66,6 +68,12 @@ export default function Account() {
             label={`${name || 'Child'}. ${linked ? 'Phone linked' : 'Not linked yet'}. Open`}
           />
         </Section>
+
+        {childId ? (
+          <Section title={`Where ${name || 'your child'} is signed in`}>
+            <EndSessions childId={childId} childName={name || 'Your child'} />
+          </Section>
+        ) : null}
 
         <Section title="Alerts">
           <ListRow title="How we reach you" value="App and text" icon="bell" divider onPress={() => demoOnly('In the real app you could choose how alerts reach you.')} />

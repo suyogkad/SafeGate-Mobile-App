@@ -4,6 +4,7 @@ import type {
   AdminActionRow,
   AlertRow,
   Child,
+  ChildDevice,
   EditableSettings,
   FlaggedConversationRow,
   Paged,
@@ -77,6 +78,20 @@ export function restoreChild(id: string): Promise<Child> {
 
 export function adminCancelSession(id: string): Promise<TherapySession> {
   return api.post<TherapySession>(`/admin/sessions/${id}/cancel`);
+}
+
+export function listChildDevices(childId: string): Promise<ChildDevice[]> {
+  return api.get<ChildDevice[]>(`/admin/children/${childId}/devices`);
+}
+
+/** Signs the child out everywhere. The conversation is kept -- ending a sitting
+ * must not erase what the family needs to read. */
+export function endAllChildSessions(childId: string): Promise<void> {
+  return api.post<void>(`/admin/children/${childId}/devices/end-all`);
+}
+
+export function revokeChildDevice(childId: string, deviceId: string): Promise<void> {
+  return api.post<void>(`/admin/children/${childId}/devices/${deviceId}/revoke`);
 }
 
 export function getSystemHealth(): Promise<SystemHealth> {

@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, CalendarDays, ListChecks, MapPin, Phone, Stethoscope, User as UserIcon } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarDays, ListChecks, LogOut, MapPin, Phone, Stethoscope, User as UserIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "../../components/ui/Button";
@@ -8,7 +8,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { useAdminUpdateChild, useArchiveChild } from "../../hooks/useAdmin";
+import { useAdminUpdateChild, useArchiveChild, useChildDevices, useEndChildSessions } from "../../hooks/useAdmin";
 import { useSchedules } from "../../hooks/useSchedules";
 import { useUsers } from "../../hooks/useUsers";
 import { ApiError } from "../../lib/api";
@@ -23,6 +23,84 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
         <p className="text-[11.5px] font-medium uppercase tracking-wide text-text-muted">{label}</p>
         <p className="text-[13.5px] text-text">{value}</p>
       </div>
+    </div>
+  );
+}
+
+function SessionsSection({ child }: { child: Child }) {
+  const { data: devices } = useChildDevices(child.id);
+  const endSessions = useEndChildSessions();
+  const [confirm, setConfirm] = useState<string | "all" | null>(null);
+  const live = (devices ?? []).filter((d) => !d.revoked_at);
+
+  const lastUsed = (iso: string | null) => {
+    if (!iso) return "not used yet";
+    const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (minutes < 2) return "in use now";
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    return hours < 24 ? `${hours}h ago` : formatDate(iso);
+  };
+
+  const end = async () => {
+    if (!confirm) return;
+    try {
+      await endSessions.mutateAsync({ childId: child.id, deviceId: confirm === "all" ? undefined : confirm });
+      toast.success(confirm === "all" ? "All sessions ended" : "Session ended");
+      setConfirm(null);
+    } catch (err) {
+      toast.error("Couldn't end the session", { description: err instanceof ApiError ? err.message : undefined });
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-border pt-5">
+      <p className="text-[13px] font-medium text-text-muted">Signed in on</p>
+      <p className="mt-1 text-[13px] text-text-muted">
+        Ending a session signs {child.full_name} out of that phone straight away. They will need a new code from their
+        parent to get back in. Nothing they have written is deleted.
+      </p>
+
+      {live.length === 0 ? (
+        <p className="mt-3 text-[13px] text-text-muted">Not signed in on any phone.</p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2">
+          {live.map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-3.5 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-text">
+                  {d.kind === "linked" ? "Child's own phone" : "Parent's phone"}
+                </p>
+                <p className="text-[12px] text-text-muted">{lastUsed(d.last_seen_at)}</p>
+              </div>
+              <Button size="sm" variant="secondary" onClick={() => setConfirm(d.id)}>
+                End
+              </Button>
+            </div>
+          ))}
+          {live.length > 1 && (
+            <Button size="sm" variant="danger" className="self-start" onClick={() => setConfirm("all")}>
+              <LogOut className="size-3.5" /> End every session
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Dialog
+        open={Boolean(confirm)}
+        onClose={() => setConfirm(null)}
+        title={confirm === "all" ? "End every session?" : "End this session?"}
+        description={`${child.full_name} will be signed out ${confirm === "all" ? "everywhere" : "on that phone"} immediately and will need a new code from their parent. Their conversations are kept.`}
+      >
+        <div className="flex gap-3">
+          <Button variant="danger" loading={endSessions.isPending} onClick={end} className="flex-1">
+            End session
+          </Button>
+          <Button variant="secondary" onClick={() => setConfirm(null)}>
+            Cancel
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
@@ -155,6 +233,7 @@ export function ChildDetailDrawer({
       </div>
 
       <ChildEditForm key={child.id} child={child} />
+      <SessionsSection child={child} />
       <ArchiveSection child={child} onDone={onClose} />
 
       <div className="mt-6">

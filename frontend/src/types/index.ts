@@ -188,3 +188,15 @@ export interface Paged<T> {
 export interface ApiErrorBody {
   detail?: string | { msg: string }[];
 }
+
+/** A phone a child can use SafeGate from. Metadata only: an admin never reads
+ * what was said on it. */
+export interface ChildDevice {
+  id: string;
+  child_id: string;
+  kind: "linked" | "parent_hosted";
+  label: string | null;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
