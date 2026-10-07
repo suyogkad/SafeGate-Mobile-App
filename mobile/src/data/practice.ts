@@ -34,6 +34,24 @@ export type Client = {
   tint: string;
 };
 
+/** The characters a child can be given. Each child keeps the same one everywhere,
+ * which is how a therapist recognises them across the app. */
+const CHARACTERS: { face: ImageSourcePropType; tint: string }[] = [
+  { face: FACES.smileBlobCyan, tint: artTints.cyan },
+  { face: FACES.coolArch, tint: artTints.lavender },
+  { face: FACES.grinFlower, tint: artTints.yellow },
+];
+
+/** A stable character for any client, real or demo: the same id always gets the
+ * same one, so it does not change between screens or reloads. */
+export function clientArt(id: ClientId): { face: ImageSourcePropType; tint: string } {
+  const known = CLIENTS[id];
+  if (known) return { face: known.face, tint: known.tint };
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return CHARACTERS[hash % CHARACTERS.length];
+}
+
 export const CLIENTS: Record<ClientId, Client> = {
   alex: { id: 'alex', name: 'Alex', age: '9 to 12', parent: 'Jordan Lee', parentFirst: 'Jordan', face: FACES.smileBlobCyan, tint: artTints.cyan },
   mia: { id: 'mia', name: 'Mia R.', age: '13 to 16', parent: 'Sam R.', parentFirst: 'Sam', face: FACES.coolArch, tint: artTints.lavender },

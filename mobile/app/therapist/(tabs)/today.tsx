@@ -25,10 +25,10 @@ import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { PHOTOS } from '@/data/faces';
 import { NOTIFICATION_LOOK, type Notification } from '@/data/notifications';
-import { CLIENTS, DEMO_DAY, PRACTITIONER } from '@/data/practice';
+import { CLIENTS } from '@/data/practice';
 import { addDays, bookableSlots, dayLabel, dayShort, DEMO_TODAY, timeLabel, weekStart } from '@/lib/schedule';
 import { needsAttention, useClients, useTherapistSessions } from '@/lib/clients';
-import { greeting } from '@/lib/time';
+import { firstName, greeting, initialsOf, longDate, partOfDay } from '@/lib/time';
 import { isOpenUrgent, useApp, useBookings, useChildName, useUnreadCount } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -80,6 +80,7 @@ export default function TherapistToday() {
   const bookings = useBookings();
   const availability = useApp((s) => s.availability);
   // The therapist's real upcoming sessions, soonest first.
+  const me = useApp((s) => s.account?.name) ?? null;
   const sessions = useTherapistSessions();
   const clients = useClients();
   const comingUp = sessions
@@ -100,7 +101,6 @@ export default function TherapistToday() {
     <Screen inTabs padded={false} edgeToEdge>
       <StatusBar style="light" />
       <HeroBand
-        photo={PHOTOS.priya.hero}
         topRight={
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Tappable
@@ -113,18 +113,18 @@ export default function TherapistToday() {
                 <CountBadge count={unread} ring={c.brand} />
               </View>
             </Tappable>
-            <Tappable label={`${PRACTITIONER.name}. Open account`} onPress={() => router.push('/therapist/account')} visualHeight={44}>
-              <Avatar initials={PRACTITIONER.initials} size={44} />
+            <Tappable label={`${me || 'Your account'}. Open account`} onPress={() => router.push('/therapist/account')} visualHeight={44}>
+              <Avatar initials={initialsOf(me)} size={44} />
             </Tappable>
           </View>
         }
       >
         <View style={{ gap: space.sm }}>
           <T v="heading" color="onBrand" header>
-            {greeting(PRACTITIONER.first)}
+            {me ? greeting(firstName(me)) : `Good ${partOfDay()}`}
           </T>
           <T v="bodyLg" color="onBrand">
-            {DEMO_DAY.label}
+            {longDate()}
           </T>
         </View>
         <Button title="My hours" size="small" icon="arrow-right" onPress={() => router.push('/therapist/availability')} />

@@ -9,8 +9,15 @@ import { THERAPISTS, type Therapist } from '../data/therapists';
  * TODO(safegate): the backend owns availability and bookings (and time zones); the app would only display them.
  */
 
-/** Every side shares one demo day: Sunday 11 October 2026. */
-export const DEMO_TODAY = '2026-10-11';
+/** Today, as YYYY-MM-DD in the device's own timezone (not UTC, or the date flips
+ * late in the evening in Australia). Every "this week" calculation hangs off it. */
+export function todayIso(d = new Date()): string {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+/** Kept as a name because screens read it everywhere; it is simply today now. */
+export const DEMO_TODAY = todayIso();
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 

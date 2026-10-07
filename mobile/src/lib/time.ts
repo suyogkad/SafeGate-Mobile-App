@@ -11,3 +11,26 @@ export function partOfDay(d = new Date()): 'morning' | 'afternoon' | 'evening' {
 }
 
 export const greeting = (name: string, d = new Date()) => `Good ${partOfDay(d)}, ${name}`;
+
+/** "Sunday 11 October" -- today, in the device's own locale. */
+export function longDate(d = new Date()): string {
+  const f = new Intl.DateTimeFormat('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
+  // en-AU gives "Wednesday, 7 October"; the design writes it without the comma.
+  return f.format(d).replace(',', '');
+}
+
+const TITLES = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'mx', 'mx.', 'prof', 'prof.']);
+
+/** First name for a greeting. Skips a title, so "Dr. Jamie Therapist" greets Jamie. */
+export function firstName(full: string | null | undefined): string {
+  const parts = (full ?? '').trim().split(/\s+/).filter(Boolean);
+  const first = parts.find((w) => !TITLES.has(w.toLowerCase()));
+  return first ?? parts[0] ?? '';
+}
+
+/** "PS" from "Priya Shah"; one letter when there is only one word. */
+export function initialsOf(full: string | null | undefined): string {
+  const parts = (full ?? '').trim().split(/\s+/).filter(Boolean).filter((w) => !TITLES.has(w.toLowerCase()));
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}

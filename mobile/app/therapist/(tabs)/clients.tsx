@@ -18,7 +18,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
-import { CLIENTS } from '@/data/practice';
+import { clientArt, CLIENTS } from '@/data/practice';
 import { useClients, type ClientSummary } from '@/lib/clients';
 import { addDays, DEMO_TODAY, weekStart } from '@/lib/schedule';
 import { useBookings } from '@/store/app';
@@ -29,12 +29,12 @@ const FILTERS = ['All', 'Session this week', 'Needs attention'] as const;
 
 function ClientCard({ cl }: { cl: ClientSummary }) {
   const { c } = useTheme();
-  const art = CLIENTS[cl.id];
+  const art = clientArt(cl.id);
   // spoken in plain words: screen readers can spell out capitals letter by letter
   const tags = [cl.needsAttention ? 'Needs attention' : null, cl.sharedThisWeek ? 'Shared this week' : null].filter(Boolean) as string[];
   return (
     <Tappable
-      label={[cl.name, `${cl.age}, with ${cl.parent}`, cl.next ? `Next session ${cl.next}` : 'No session booked', cl.lastCheckin ? `Last check-in ${cl.lastCheckin}` : 'Nothing shared this week', ...tags, 'Open']
+      label={[cl.name, [cl.age, cl.parent ? `with ${cl.parent}` : null].filter(Boolean).join(', '), cl.next ? `Next session ${cl.next}` : 'No session booked', cl.lastCheckin ? `Last check-in ${cl.lastCheckin}` : 'Nothing shared this week', ...tags, 'Open']
         .join('. ')}
       onPress={() => router.push(`/therapist/client?id=${cl.id}` as Href)}
       style={{ backgroundColor: c.bg, borderRadius: radius.panel, padding: space.lg, ...shadow.lift }}
@@ -63,7 +63,7 @@ function ClientCard({ cl }: { cl: ClientSummary }) {
         <View style={{ flex: 1, gap: space.xs }}>
           <T v="heading">{cl.name}</T>
           <T v="bodySm" color="textSecondary">
-            {cl.age} · with {cl.parent}
+            {[cl.age, cl.parent ? `with ${cl.parent}` : null].filter(Boolean).join(' · ') || 'No details yet'}
           </T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs, marginTop: space.xs }}>
             <Icon name="calendar" size={16} color={c.textSecondary} />

@@ -10,10 +10,9 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Header } from '@/components/Header';
 import { EmojiCircle } from '@/components/NotesParts';
-import { PhotoAvatar } from '@/components/PhotoAvatar';
 import { Screen } from '@/components/Screen';
 import { Stagger } from '@/components/ui/Appear';
-import { SectionHeader } from '@/components/ui/bits';
+import { Avatar, SectionHeader } from '@/components/ui/bits';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip, ChipRow } from '@/components/ui/Chip';
@@ -23,9 +22,9 @@ import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { PHOTOS } from '@/data/faces';
-import { PRACTITIONER } from '@/data/practice';
 import type { Therapist } from '@/data/therapists';
 import { demoOnly } from '@/lib/call';
+import { initialsOf } from '@/lib/time';
 import { useApp, useTherapist, type ProfileEdit } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -48,6 +47,7 @@ type Draft = {
 const yearsOf = (s: string) => s.match(/\d+/)?.[0] ?? '';
 
 export default function YourProfile() {
+  const me = useApp((s) => s.account?.name) ?? null;
   const { c } = useTheme();
   const t = useTherapist('priya');
   const [d, setD] = useState<Draft>(() => ({
@@ -119,13 +119,13 @@ export default function YourProfile() {
       <Stagger>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-            <PhotoAvatar photo={PHOTOS.priya.face} size={80} />
+            <Avatar initials={initialsOf(me)} size={80} />
             <View style={{ flex: 1, gap: 2 }}>
               <T v="heading" header>
-                {PRACTITIONER.name}
+                {me || 'Your name'}
               </T>
               <T v="bodySm" color="textMuted">
-                {PRACTITIONER.email}
+                {useApp.getState().account?.email || 'Your email'}
               </T>
               <Button title="Change photo" variant="text" iconLeft="camera" onPress={() => demoOnly('In the real app you could upload a new photo.')} />
             </View>
