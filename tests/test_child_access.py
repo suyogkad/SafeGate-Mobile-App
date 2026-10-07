@@ -30,6 +30,21 @@ async def _code(client, parent_token, child_id) -> str:
     return resp.json()["code"]
 
 
+async def _admin_token(client, db_session) -> str:
+    from app.db.models import User, UserRole
+    from app.security import hash_password
+
+    admin = User(
+        email=f"{uuid.uuid4().hex}@example.com",
+        hashed_password=hash_password("AdminPass123!"),
+        role=UserRole.ADMIN,
+        full_name="Admin Test",
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    return await _login(client, admin.email, "AdminPass123!")
+
+
 async def _linked_child(client):
     """A parent, their child, and a token for the child's own linked phone."""
     parent_token, child = await _make_parent_with_child(client)
@@ -427,3 +442,116 @@ async def test_transcribing_is_recorded_in_the_audit_trail(client, db_session):
         )
     ).scalars().all()
     assert "speech_transcribed" in actions
+
+
+# ------------------------------------------- ending a session, and reading it back ----
+
+
+async def _talked(client, child_id, child_token, text="hello there"):
+    resp = await client.post(
+        "/companion/reply",
+        json={"child_id": child_id, "messages": [{"role": "user", "content": text}]},
+        headers=_h(child_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_parent_can_read_what_the_child_said_to_the_companion(client):
+    """The child is told their grown-up can read this, so it must actually be true."""
+    parent_token, child, child_token = await _linked_child(client)
+    await _talked(client, child["id"], child_token, "i am building a lego castle")
+
+    resp = await client.get(f"/children/{child['id']}/conversations", headers=_auth_headers(parent_token))
+    assert resp.status_code == 200, resp.text
+    turns = resp.json()
+    assert len(turns) == 1
+    assert turns[0]["child_message"] == "i am building a lego castle"
+    assert turns[0]["reply"]
+    # Attributed to the sitting it happened in, so a parent can tell phones apart.
+    assert turns[0]["device_id"] is not None
+    assert turns[0]["device_label"]
+
+
+@pytest.mark.asyncio
+async def test_only_the_childs_own_parent_can_read_the_conversation(client):
+    parent_token, child, child_token = await _linked_child(client)
+    await _talked(client, child["id"], child_token)
+
+    other_parent_token, _ = await _make_parent_with_child(client)
+    therapist_token, _ = await _make_therapist(client)
+
+    assert (
+        await client.get(f"/children/{child['id']}/conversations", headers=_auth_headers(other_parent_token))
+    ).status_code == 404
+    # A therapist sees only what the family chooses to share (HANDOFF rule 19).
+    assert (
+        await client.get(f"/children/{child['id']}/conversations", headers=_auth_headers(therapist_token))
+    ).status_code == 403
+    # And the child cannot read it back through the parent's route.
+    assert (
+        await client.get(f"/children/{child['id']}/conversations", headers=_h(child_token))
+    ).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_admin_still_cannot_read_what_a_child_said(client, db_session):
+    """Admins get oversight, not the contents of a child's conversation."""
+    _, child, child_token = await _linked_child(client)
+    await _talked(client, child["id"], child_token, "a secret worry")
+    admin_token = await _admin_token(client, db_session)
+
+    # The parent route is not theirs to use.
+    assert (
+        await client.get(f"/children/{child['id']}/conversations", headers=_auth_headers(admin_token))
+    ).status_code == 403
+
+    # And the admin's own flagged view carries no message text.
+    flagged = (await client.get("/admin/conversations/flagged", headers=_auth_headers(admin_token))).json()
+    assert "a secret worry" not in str(flagged)
+
+
+@pytest.mark.asyncio
+async def test_parent_ends_every_session_at_once(client):
+    parent_token, child, child_token = await _linked_child(client)
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 200
+
+    resp = await client.post(f"/children/{child['id']}/devices/end-all", headers=_auth_headers(parent_token))
+    assert resp.status_code == 204
+    # The phone in the child's hand stops working at its next request.
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ending_sessions_keeps_the_conversation(client):
+    """Ending a sitting must not erase what was said: the parent still needs to read it."""
+    parent_token, child, child_token = await _linked_child(client)
+    await _talked(client, child["id"], child_token, "i felt wobbly at school")
+    await client.post(f"/children/{child['id']}/devices/end-all", headers=_auth_headers(parent_token))
+
+    turns = (await client.get(f"/children/{child['id']}/conversations", headers=_auth_headers(parent_token))).json()
+    assert any(t["child_message"] == "i felt wobbly at school" for t in turns)
+
+
+@pytest.mark.asyncio
+async def test_admin_can_see_and_end_sessions_without_reading_them(client, db_session):
+    _, child, child_token = await _linked_child(client)
+    await _talked(client, child["id"], child_token)
+    admin_token = await _admin_token(client, db_session)
+
+    devices = await client.get(f"/admin/children/{child['id']}/devices", headers=_auth_headers(admin_token))
+    assert devices.status_code == 200 and len(devices.json()) == 1
+    assert "child_message" not in str(devices.json())
+
+    ended = await client.post(f"/admin/children/{child['id']}/devices/end-all", headers=_auth_headers(admin_token))
+    assert ended.status_code == 204
+    assert (await client.get("/auth/child/me", headers=_h(child_token))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_parent_cannot_end_another_familys_sessions(client):
+    _, child, _ = await _linked_child(client)
+    other_parent_token, _ = await _make_parent_with_child(client)
+    resp = await client.post(f"/children/{child['id']}/devices/end-all", headers=_auth_headers(other_parent_token))
+    assert resp.status_code == 404

@@ -16,15 +16,16 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Child, ChildDevice, ChildLinkCode, User, UserRole
+from app.db.models import Child, ChildDevice, ChildLinkCode, ConversationLog, User, UserRole
 from app.db.session import get_db
 from app.schemas import (
     ChildDeviceOut,
+    ConversationTurnOut,
     ChildLinkCodeOut,
     ChildLinkRequest,
     ChildProfileOut,
@@ -136,6 +137,26 @@ async def start_child_session(
     )
 
 
+async def _end_sessions(db: AsyncSession, child: Child, device_id: uuid.UUID | None) -> int:
+    """End one sitting, or every sitting for this child. Bumping the token version
+    kills tokens already issued, so the phone in the child's hand stops working at
+    its next request rather than whenever the token would have expired."""
+    stmt = select(ChildDevice).where(ChildDevice.child_id == child.id, ChildDevice.revoked_at.is_(None))
+    if device_id is not None:
+        stmt = stmt.where(ChildDevice.id == device_id)
+
+    devices = (await db.execute(stmt)).scalars().all()
+    if device_id is not None and not devices:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    now = datetime.now(timezone.utc)
+    for device in devices:
+        device.revoked_at = now
+        device.token_version += 1
+    await db.commit()
+    return len(devices)
+
+
 @router.get("/children/{child_id}/devices", response_model=list[ChildDeviceOut])
 async def list_devices(
     child_id: uuid.UUID,
@@ -160,18 +181,72 @@ async def revoke_device(
 ) -> None:
     """Unpair a phone. Every token already issued for it stops working immediately."""
     child = await _parents_child(db, child_id, parent)
-    device = (
-        await db.execute(
-            select(ChildDevice).where(ChildDevice.id == device_id, ChildDevice.child_id == child.id)
-        )
-    ).scalar_one_or_none()
-    if device is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
-
-    device.revoked_at = datetime.now(timezone.utc)
-    device.token_version += 1
-    await db.commit()
+    await _end_sessions(db, child, device_id)
     await log_child_access(db, child.id, parent.id, "child_device_revoked")
+
+
+@router.post("/children/{child_id}/devices/end-all", status_code=status.HTTP_204_NO_CONTENT)
+async def end_all_sessions(
+    child_id: uuid.UUID,
+    parent: User = Depends(require_role(UserRole.PARENT)),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Stop the child using the app anywhere, right now -- the phone in their hand
+    and any sitting left open on the parent's own phone."""
+    child = await _parents_child(db, child_id, parent)
+    ended = await _end_sessions(db, child, None)
+    await log_child_access(db, child.id, parent.id, f"child_sessions_ended({ended})")
+
+
+@router.get("/children/{child_id}/conversations", response_model=list[ConversationTurnOut])
+async def read_conversations(
+    child_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    device_id: uuid.UUID | None = None,
+    parent: User = Depends(require_role(UserRole.PARENT)),
+    db: AsyncSession = Depends(get_db),
+) -> list[ConversationTurnOut]:
+    """What the child said to the companion, and what it said back.
+
+    The child is told plainly that their grown-up can read this, and the product
+    depends on that being true (HANDOFF rule 3) -- so the parent gets the real
+    words. An admin never does; they only ever see that something was flagged.
+
+    `device_id` narrows it to one sitting, which is how a parent reviews what
+    happened on a particular phone.
+    """
+    child = await _parents_child(db, child_id, parent)
+
+    stmt = select(ConversationLog).where(ConversationLog.child_id == child.id)
+    if device_id is not None:
+        stmt = stmt.where(ConversationLog.device_id == device_id)
+
+    rows = (
+        await db.execute(stmt.order_by(ConversationLog.timestamp.desc()).limit(limit).offset(offset))
+    ).scalars().all()
+
+    labels = {
+        d.id: d.label or d.kind
+        for d in (
+            await db.execute(select(ChildDevice).where(ChildDevice.child_id == child.id))
+        ).scalars().all()
+    }
+
+    await log_child_access(db, child.id, parent.id, "conversations_read")
+    return [
+        ConversationTurnOut(
+            id=r.id,
+            timestamp=r.timestamp,
+            child_message=r.child_message,
+            reply=r.reply,
+            flagged=r.flagged,
+            risk_level=r.risk_level.value,
+            device_id=r.device_id,
+            device_label=labels.get(r.device_id),
+        )
+        for r in rows
+    ]
 
 
 # ------------------------------------------------------------- child side ----

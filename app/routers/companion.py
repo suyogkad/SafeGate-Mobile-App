@@ -136,6 +136,7 @@ async def companion_reply(
         flagged=flagged,
         risk_level=risk,
         classifier_failed=classifier_failed,
+        device_id=actor.device_id,
     )
     db.add(log)
     await db.commit()

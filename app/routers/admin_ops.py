@@ -27,6 +27,7 @@ from app.db.models import (
     AvailabilitySlot,
     Child,
     ChildAccessLog,
+    ChildDevice,
     ConversationLog,
     RiskLevel,
     SessionStatus,
@@ -36,6 +37,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.reminders import cancel_session_reminder
+from app.routers.child_access import _end_sessions as end_child_sessions
 from app.routers.children import _enrich, ensure_assignable_therapist
 from app.routers.sessions import _enrich_sessions
 from app.schemas import (
@@ -43,6 +45,7 @@ from app.schemas import (
     AdminActionRow,
     AdminChildUpdate,
     AlertRow,
+    ChildDeviceOut,
     ChildOut,
     DailyFlagCount,
     FlaggedConversationRow,
@@ -484,6 +487,45 @@ async def update_platform_settings(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return await _settings_view(db)
+
+
+@router.get("/children/{child_id}/devices", response_model=list[ChildDeviceOut])
+async def admin_list_devices(
+    child_id: uuid.UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(admin_only)
+) -> list[ChildDevice]:
+    """Which phones a child can use the app from. Metadata only -- an admin never
+    reads what was said on them."""
+    child = await _get_child(db, child_id)
+    rows = (
+        await db.execute(
+            select(ChildDevice).where(ChildDevice.child_id == child.id).order_by(ChildDevice.created_at.desc())
+        )
+    ).scalars().all()
+    await log_admin_action(db, admin.id, "child.devices_viewed", "child", child.id)
+    return list(rows)
+
+
+@router.post("/children/{child_id}/devices/end-all", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_end_sessions(
+    child_id: uuid.UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(admin_only)
+) -> None:
+    """End every open sitting for this child. For support: a lost phone, or a family
+    who cannot reach their own account."""
+    child = await _get_child(db, child_id)
+    ended = await end_child_sessions(db, child, None)
+    await log_admin_action(db, admin.id, "child.sessions_ended", "child", child.id, f"devices={ended}")
+
+
+@router.post("/children/{child_id}/devices/{device_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_revoke_device(
+    child_id: uuid.UUID,
+    device_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(admin_only),
+) -> None:
+    child = await _get_child(db, child_id)
+    await end_child_sessions(db, child, device_id)
+    await log_admin_action(db, admin.id, "child.device_revoked", "child", child.id)
 
 
 # ------------------------------------------------------------------ export ----

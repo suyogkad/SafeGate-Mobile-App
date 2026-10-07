@@ -346,3 +346,23 @@ class TranscriptOut(BaseModel):
     fix before anything is sent (HANDOFF rule 13)."""
 
     text: str
+
+
+class ConversationTurnOut(BaseModel):
+    """One exchange, as the child's own parent may read it.
+
+    The child is told plainly that their grown-up can read this (HANDOFF rule 3),
+    so the parent gets the real words -- unlike an admin, who only ever sees that
+    something was flagged.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    timestamp: datetime
+    child_message: str
+    reply: str
+    flagged: bool
+    risk_level: str
+    device_id: uuid.UUID | None
+    device_label: str | None = None

@@ -236,6 +236,11 @@ class ConversationLog(Base):
     flagged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     risk_level: Mapped[RiskLevel] = mapped_column(default=RiskLevel.NONE, nullable=False)
     classifier_failed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # Which sitting this turn belongs to: the child's own phone, or the parent's.
+    # Null for turns recorded before devices existed.
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("child_devices.id"), nullable=True
+    )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
