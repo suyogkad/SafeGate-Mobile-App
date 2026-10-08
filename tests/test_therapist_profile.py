@@ -276,3 +276,111 @@ async def test_another_therapist_cannot_read_or_write_a_childs_goals(client):
             f"/children/{child['id']}/goals", json={"goals": ["theirs"]}, headers=_auth_headers(other_token)
         )
     ).status_code == 403
+
+
+async def _offering(client, token, *, video: bool, in_person: bool):
+    """Set what this therapist offers, with a clinic when they see families."""
+    await client.put(
+        "/therapist/me",
+        json={
+            "title": "Psychologist",
+            "clinic_name": "Parramatta" if in_person else None,
+            "clinic_address": "12 George Street" if in_person else None,
+        },
+        headers=_auth_headers(token),
+    )
+    return (
+        await client.put(
+            "/therapist/hours",
+            json={
+                "weekly": _weekdays_ahead(),
+                "offers_video": video,
+                "offers_in_person": in_person,
+                "booking_window_weeks": 1,
+                "notice_days": 1,
+                "timezone": SYDNEY,
+            },
+            headers=_auth_headers(token),
+        )
+    ).json()
+
+
+@pytest.mark.asyncio
+async def test_a_family_books_the_way_the_therapist_offers(client):
+    user, token = await _therapist(client)
+    await _offering(client, token, video=True, in_person=True)
+    slots = (await client.get(f"/availability/{user['id']}", headers=_auth_headers(token))).json()
+    parent_token, child = await _make_parent_with_child(client, therapist_id=user["id"])
+
+    booked = (
+        await client.post(
+            "/sessions",
+            json={
+                "child_id": child["id"],
+                "availability_slot_id": slots[0]["id"],
+                "meeting_kind": "in_person",
+            },
+            headers=_auth_headers(parent_token),
+        )
+    ).json()
+    assert booked["meeting_kind"] == "in_person"
+    # No video room for a session nobody will dial into.
+    assert booked["video_room_url"] is None
+    # And joining one says so, rather than opening an empty room.
+    join = await client.post(f"/sessions/{booked['id']}/join", headers=_auth_headers(parent_token))
+    assert join.status_code == 400
+    assert "in person" in join.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_in_person_is_refused_without_a_clinic_to_go_to(client):
+    """"In person" with nowhere to go would send a family out to find nothing."""
+    user, token = await _therapist(client)
+    await _offering(client, token, video=True, in_person=False)
+    slots = (await client.get(f"/availability/{user['id']}", headers=_auth_headers(token))).json()
+    parent_token, child = await _make_parent_with_child(client, therapist_id=user["id"])
+
+    resp = await client.post(
+        "/sessions",
+        json={"child_id": child["id"], "availability_slot_id": slots[0]["id"], "meeting_kind": "in_person"},
+        headers=_auth_headers(parent_token),
+    )
+    assert resp.status_code == 400
+    assert "in person" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_video_is_refused_by_an_in_person_only_therapist(client):
+    user, token = await _therapist(client)
+    await _offering(client, token, video=False, in_person=True)
+    slots = (await client.get(f"/availability/{user['id']}", headers=_auth_headers(token))).json()
+    parent_token, child = await _make_parent_with_child(client, therapist_id=user["id"])
+
+    resp = await client.post(
+        "/sessions",
+        json={"child_id": child["id"], "availability_slot_id": slots[0]["id"], "meeting_kind": "video"},
+        headers=_auth_headers(parent_token),
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_notification_preferences_are_saved_but_alerts_are_not_optional(client):
+    """A therapist can turn booking and note reminders off. Safety alerts about
+    their own clients are not in this list at all, by design."""
+    _, token = await _therapist(client)
+    me = (await client.get("/therapist/me", headers=_auth_headers(token))).json()
+    assert me["notify"] == {"bookings": True, "sharing": True, "notes_reminders": True}
+
+    saved = (
+        await client.put(
+            "/therapist/notify",
+            json={"bookings": False, "sharing": True, "notes_reminders": False},
+            headers=_auth_headers(token),
+        )
+    ).json()
+    assert saved["notify"] == {"bookings": False, "sharing": True, "notes_reminders": False}
+    assert "alerts" not in saved["notify"]
+
+    again = (await client.get("/therapist/me", headers=_auth_headers(token))).json()
+    assert again["notify"]["bookings"] is False

@@ -19,9 +19,9 @@ import { Icon } from '@/components/ui/Icon';
 import { ListRow } from '@/components/ui/ListRow';
 import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
-import { PRACTITIONER } from '@/data/practice';
 import { signOutEverywhere } from '@/lib/auth';
 import { useApp } from '@/store/app';
+import { useMe } from '@/lib/therapist';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -41,20 +41,26 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function TherapistAccount() {
   const { c } = useTheme();
   const account = useApp((s) => s.account);
-  const prefs = useApp((s) => s.therapistPrefs);
-  const setPref = useApp((s) => s.setTherapistPref);
+  const { me, saveNotify } = useMe();
+  const prefs = me?.notify ?? { bookings: true, sharing: true, notes_reminders: true };
+  const setPref = (patch: Partial<typeof prefs>) => saveNotify({ ...prefs, ...patch });
 
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Account" left="none" getHelp={false} />}>
       <Stagger>
         <NavyPanel
           caption="PRACTITIONER"
-          title={account?.name || 'Your practice'}
-          lead={<Avatar initials={initialsOf(account?.name)} size={72} />}
+          title={me?.full_name || account?.name || 'Your practice'}
+          lead={<Avatar initials={initialsOf(me?.full_name ?? account?.name)} size={72} />}
         >
           <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-            {account?.email || 'Signed in'}
+            {me?.email || account?.email || 'Signed in'}
           </T>
+          {me?.title ? (
+            <T v="bodySm" color="onBrand" style={{ opacity: 0.9 }}>
+              {me.title}
+            </T>
+          ) : null}
         </NavyPanel>
 
         <Section title="Your practice">
@@ -66,7 +72,18 @@ export default function TherapistAccount() {
             divider
             onPress={() => router.push('/therapist/profile' as Href)}
           />
-          <ListRow title="My hours" subtitle="When families can book you" icon="clock" chevron divider onPress={() => router.push('/therapist/availability' as Href)} />
+          <ListRow
+            title="My hours"
+            subtitle={
+              me
+                ? `${me.hours.open_times === 1 ? '1 open time' : `${me.hours.open_times} open times`} for families right now`
+                : 'When families can book you'
+            }
+            icon="clock"
+            chevron
+            divider
+            onPress={() => router.push('/therapist/availability' as Href)}
+          />
           <ListRow title="All notifications" icon="list" chevron onPress={() => router.push('/therapist/notifications')} />
         </Section>
 
@@ -85,13 +102,13 @@ export default function TherapistAccount() {
             }
             divider
           />
-          <SwitchRow title="New bookings" on={prefs.bookings} onToggle={() => setPref('bookings', !prefs.bookings)} />
-          <SwitchRow title="Families sharing their week" on={prefs.sharing} onToggle={() => setPref('sharing', !prefs.sharing)} />
+          <SwitchRow title="New bookings" on={prefs.bookings} onToggle={() => setPref({ bookings: !prefs.bookings })} />
+          <SwitchRow title="Families sharing their week" on={prefs.sharing} onToggle={() => setPref({ sharing: !prefs.sharing })} />
           <SwitchRow
             title="Reminders to write notes"
             subtitle="The evening after a session"
-            on={prefs.notesReminders}
-            onToggle={() => setPref('notesReminders', !prefs.notesReminders)}
+            on={prefs.notes_reminders}
+            onToggle={() => setPref({ notes_reminders: !prefs.notes_reminders })}
             divider={false}
           />
         </Section>

@@ -1,20 +1,19 @@
 /**
- * T06 Client. The therapist profile's navy header (large initial + the child's character, no photos) with
- * "Message Jordan", then Overview | Shared | Sessions:
- *  - Overview: goals (therapist-written, editable), the parent's "About your child" answers, Comfort settings
- *    (read-only) and the current "Things to try at home" (from the last shared notes).
- *  - Shared: only what the family shared (rule 19). The week's check-ins (the same interactive chart as the parent's
- *    Check-ins) and summary appear only after "Share with Priya"; calm-step alerts always show (the therapist is told).
+ * T06 Client. The navy header (large initial + the child's character, no photos) with
+ * "Message <parent>", then Overview | Shared | Sessions:
+ *  - Overview: goals (therapist-written, editable, saved on the server), what the child's
+ *    record actually holds, and the current "Things to try at home" from the last notes shared.
+ *  - Shared: only what the family shared (rule 19). Sharing a week is not built on the
+ *    server yet, so that section says so; safety alerts are real, because the therapist is told.
  *  - Sessions: upcoming and past, with where the notes are (NOTES SHARED / WRITE NOTES / DRAFT).
- * ?id=alex|mia|leo  &tab=Overview|Shared|Sessions
+ * ?id=<child id>  &tab=Overview|Shared|Sessions
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Image, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { goBack, Header } from '@/components/Header';
-import { MoodChart } from '@/components/MoodChart';
 import { Screen } from '@/components/Screen';
 import { SessionCard, withComma } from '@/components/SessionCard';
 import { Stagger } from '@/components/ui/Appear';
@@ -27,17 +26,29 @@ import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
-import { WEEK, SHARED } from '@/data/insights';
-import { ALEX_PAST, clientArt, CLIENTS, OTHER_CLIENT_SHARING, type ClientId } from '@/data/practice';
+import { clientArt } from '@/data/practice';
+import type { ApiSession } from '@/api/therapist';
 import { contact } from '@/lib/call';
-import { latestShared, useClients } from '@/lib/clients';
-import { dayLabel, DEMO_TODAY, timeLabel } from '@/lib/schedule';
-import { useApp, useBookings, useChildName } from '@/store/app';
+import { useClients, useTherapistAlerts, useTherapistSessions, type ClientSummary } from '@/lib/clients';
+import { dayLabel, localDateIso, localStartMinutes, timeLabel } from '@/lib/schedule';
+import { useGoals, useLastSuggestions } from '@/lib/therapist';
 import { gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 const TABS = ['Overview', 'Shared', 'Sessions'] as const;
 type Tab = (typeof TABS)[number];
+
+/** Anything a family did not give us says so, rather than carrying a placeholder
+ * that reads like real data to whoever needs it most. */
+const recorded = (v: string | null | undefined) => (v && v.trim() ? v : 'Not recorded');
+
+const ALERT_AT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 
 /** A label/value pair, as in the Alert's facts card. */
 function Fact({ label, value, last }: { label: string; value: string; last?: boolean }) {
@@ -106,12 +117,11 @@ export default function Client() {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string; tab?: string }>();
-  const id: ClientId = params.id ?? '';
+  const id = params.id ?? '';
   const [tab, setTab] = useState<Tab>(TABS.find((t) => t === params.tab) ?? 'Overview');
   const clients = useClients();
   const summary = clients.find((cl) => cl.id === id);
   const art = clientArt(id);
-  const childName = useChildName();
 
   if (!summary) {
     return (
@@ -124,7 +134,7 @@ export default function Client() {
   }
 
   const name = summary.name;
-  const parentFirst = summary.parentFirst || 'The family';
+  const parentFirst = summary.parentFirst || 'the family';
 
   return (
     <Screen padded={false} edgeToEdge backdrop="brand">
@@ -147,28 +157,29 @@ export default function Client() {
               {name}
             </T>
             <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-              {[summary.age, summary.parent ? `Parent: ${summary.parent}` : null].filter(Boolean).join(' · ') ||
-                'No details yet'}
+              {[summary.age, summary.parent ? `Parent: ${summary.parent}` : null].filter(Boolean).join(' · ') || 'No details yet'}
             </T>
             <T v="bodySm" color="onBrand" style={{ opacity: 0.9 }}>
               {summary.next ? `Next: ${summary.next}` : 'No session booked'}
             </T>
           </View>
-          <Button
-            title={`Message ${summary.parentFirst || 'the family'}`}
-            size="small"
-            variant="onBrand"
-            iconLeft="message-square"
-            onPress={() => contact('message', summary.parent)}
-          />
+          {summary.parent ? (
+            <Button
+              title={`Message ${summary.parentFirst}`}
+              size="small"
+              variant="onBrand"
+              iconLeft="message-square"
+              onPress={() => contact('message', summary.parent)}
+            />
+          ) : null}
         </View>
       </View>
 
       <View style={{ paddingHorizontal: gutter, gap: space.xl }}>
         <Segmented label={`About ${name}`} options={TABS} value={tab} onChange={setTab} />
         <Stagger key={tab}>
-          {tab === 'Overview' ? <Overview id={id} name={name} parentFirst={parentFirst} /> : null}
-          {tab === 'Shared' ? <Shared id={id} name={name} childName={childName} parentFirst={parentFirst} /> : null}
+          {tab === 'Overview' ? <Overview summary={summary} parentFirst={parentFirst} /> : null}
+          {tab === 'Shared' ? <Shared id={id} name={name} parentFirst={parentFirst} /> : null}
           {tab === 'Sessions' ? <Sessions id={id} name={name} /> : null}
         </Stagger>
       </View>
@@ -176,40 +187,32 @@ export default function Client() {
   );
 }
 
-function Overview({ id, name, parentFirst }: { id: ClientId; name: string; parentFirst: string }) {
-  const { c } = useTheme();
-  const goals = useApp((s) => s.goals[id]) ?? [];
-  const child = useApp((s) => s.child);
-  const comfort = useApp((s) => s.comfort);
-  const notes = useApp((s) => s.sessionNotes);
+function Overview({ summary, parentFirst }: { summary: ClientSummary; parentFirst: string }) {
+  const { goals, save } = useGoals(summary.id);
   const [editing, setEditing] = useState<string[] | null>(null);
-  const alex = id === 'alex';
-  const tryAtHome = alex ? (latestShared(notes)?.tryAtHome ?? []) : [];
-  const answer = (v: string | string[] | null) => (Array.isArray(v) ? (v.length ? v.join(', ') : null) : v) ?? 'Not answered yet';
+  const [error, setError] = useState<string | null>(null);
+  const tryAtHome = useLastSuggestions(summary.id, new Date().toISOString()) ?? [];
+  const name = summary.name;
+  const record = summary.record;
 
-  const comfortLine = [
-    `${comfort.textSize} text`,
-    comfort.readAloud ? 'reads things aloud' : null,
-    comfort.simpleWords ? 'simple words' : null,
-    comfort.fewerChoices ? 'fewer choices' : null,
-    comfort.movement ? 'movement on' : 'movement off',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const done = async () => {
+    if (!editing) {
+      setEditing([...goals]);
+      return;
+    }
+    const failed = await save(editing.map((g) => g.trim()).filter(Boolean));
+    if (failed) {
+      setError(failed);
+      return;
+    }
+    setError(null);
+    setEditing(null);
+  };
 
   return (
     <View style={{ gap: space.xl }}>
       <View style={{ gap: space.md }}>
-        <SectionHeader
-          title="Goals"
-          action={editing ? 'Done' : 'Edit goals'}
-          onAction={() => {
-            if (editing) {
-              useApp.getState().setGoals(id, editing.map((g) => g.trim()).filter(Boolean));
-              setEditing(null);
-            } else setEditing([...goals]);
-          }}
-        />
+        <SectionHeader title="Goals" action={editing ? 'Done' : 'Edit goals'} onAction={done} />
         <Card tone="raised" padding={space.lg}>
           {editing ? (
             <View style={{ gap: space.md }}>
@@ -225,6 +228,11 @@ function Overview({ id, name, parentFirst }: { id: ClientId; name: string; paren
               <T v="bodySm" color="textMuted">
                 Write goals the family would recognise: plain words, no scores.
               </T>
+              {error ? (
+                <T v="bodySm" color="onWarnTint" accessibilityLiveRegion="polite">
+                  {error}
+                </T>
+              ) : null}
             </View>
           ) : goals.length ? (
             goals.map((g, i) => <Numbered key={g} n={i + 1} title={g} />)
@@ -234,47 +242,29 @@ function Overview({ id, name, parentFirst }: { id: ClientId; name: string; paren
             </T>
           )}
         </Card>
+        {!editing && goals.length ? (
+          <T v="bodySm" color="textMuted">
+            {parentFirst} can read these too.
+          </T>
+        ) : null}
       </View>
 
-      {alex ? (
-        <View style={{ gap: space.md }}>
-          <SectionHeader title={`About ${name}`} />
-          <Card tone="raised" padding={space.lg} style={{ paddingVertical: space.xs }}>
-            <Fact label="Age" value={answer(child.age)} />
-            <Fact label="Lately" value={answer(child.feeling)} />
-            <Fact label="What tends to be hard" value={answer(child.hard)} />
-            <Fact label="What would help most" value={answer(child.help)} />
-            <Fact label={`How ${name} communicates best`} value={answer(child.communicate)} last />
-          </Card>
-          <T v="bodySm" color="textMuted">
-            From {parentFirst}’s answers when setting up SafeGate.
-          </T>
-        </View>
-      ) : (
-        <Card tone="raised" padding={space.lg}>
-          <T v="body" color="textSecondary">
-            {parentFirst}’s answers about {name} show here once the family joins SafeGate.
-          </T>
+      <View style={{ gap: space.md }}>
+        <SectionHeader title={`${name}’s record`} />
+        <Card tone="raised" padding={space.lg} style={{ paddingVertical: space.xs }}>
+          <Fact label="Age" value={summary.age || 'Not recorded'} />
+          <Fact label="Parent" value={recorded(record.parent_name)} />
+          <Fact label="Emergency contact" value={recorded(record.emergency_contact_name)} />
+          <Fact label="Emergency phone" value={recorded(record.emergency_contact_phone)} />
+          <Fact label="Home address" value={recorded(record.home_address)} last />
         </Card>
-      )}
-
-      {alex ? (
-        <View style={{ gap: space.md }}>
-          <SectionHeader title="Comfort settings" />
-          <Card tone="raised" padding={space.lg}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }} accessible accessibilityLabel={`Comfort settings: ${comfortLine}. Only ${name} and ${parentFirst} can change these.`}>
-              <Icon name="sliders" size={22} color={c.text} />
-              <View style={{ flex: 1, gap: 2 }}>
-                <T v="bodyLg">{comfortLine.charAt(0).toUpperCase() + comfortLine.slice(1)}</T>
-                <T v="bodySm" color="textMuted">
-                  Only {name} and {parentFirst} can change these.
-                </T>
-              </View>
-              <Icon name="lock" size={16} color={c.textMuted} />
-            </View>
-          </Card>
-        </View>
-      ) : null}
+        <T v="bodySm" color="textMuted">
+          {/* Setup asks only for a name, so most of this is usually blank. Saying
+              "Not recorded" is the point: a placeholder here would mislead whoever
+              needs an emergency contact most. */}
+          Only {parentFirst} can fill these in, in their own app.
+        </T>
+      </View>
 
       {tryAtHome.length ? (
         <View style={{ gap: space.md }}>
@@ -284,73 +274,45 @@ function Overview({ id, name, parentFirst }: { id: ClientId; name: string; paren
               <Numbered key={t.title} n={i + 1} title={t.title} line={t.line} />
             ))}
           </Card>
+          <T v="bodySm" color="textMuted">
+            From the notes you last shared.
+          </T>
         </View>
       ) : null}
     </View>
   );
 }
 
-function Shared({ id, name, childName, parentFirst }: { id: ClientId; name: string; childName: string; parentFirst: string }) {
+function Shared({ id, name, parentFirst }: { id: string; name: string; parentFirst: string }) {
   const { c } = useTheme();
-  // Looking at what the family shared is reading it: "Jordan shared Alex's week" leaves Needs attention.
-  useEffect(() => {
-    useApp.getState().markReadWhere((n) => n.audience === 'therapist' && n.type === 'shared' && n.childId === id);
-  }, [id]);
-  const sharedWeek = useApp((s) => s.sharedWeek);
-  const calmMode = useApp((s) => s.calmMode);
-  const calmAt = useApp((s) => s.calmAt);
-  const calmSeenAt = useApp((s) => s.calmSeenAt);
-  const emergency = useApp((s) => s.emergency);
-  const alex = id === 'alex';
-  const other = alex ? null : (OTHER_CLIENT_SHARING[id] ?? null);
-  const weekShared = alex ? sharedWeek : !!other?.sharedThisWeek;
+  const { alerts } = useTherapistAlerts(false);
+  const mine = alerts.filter((a) => a.child_id === id);
+  const art = clientArt(id);
 
   return (
     <View style={{ gap: space.xl }}>
       <View style={{ flexDirection: 'row', gap: space.sm }}>
         <Icon name="info" size={18} color={c.textSecondary} />
         <T v="bodySm" color="textSecondary" style={{ flex: 1 }}>
-          {parentFirst} shares check-ins each week. Chats and the journal only when {parentFirst} chooses.
+          You only see what {parentFirst} chooses to share. Safety alerts always reach you.
         </T>
       </View>
 
       <View style={{ gap: space.md }}>
         <SectionHeader title="This week" />
-        {weekShared && alex ? (
-          <>
-            <Card tone="raised" padding={space.lg}>
-              <MoodChart points={WEEK} />
-            </Card>
-            <Card tone="tint" r={24} padding={space.xl}>
-              <View style={{ gap: space.sm }}>
-                <T v="bodySm" color="brand">
-                  {parentFirst}’s summary
-                </T>
-                <T v="bodyLg" color="brand">
-                  {SHARED.replace(/Alex/g, childName)}
-                </T>
-              </View>
-            </Card>
-          </>
-        ) : weekShared && other?.summary ? (
-          <Card tone="tint" r={24} padding={space.xl}>
-            <T v="bodyLg" color="brand">
-              {other.summary}
+        {/* Sharing a week is not built on the server yet. An empty state is the
+            honest answer; invented check-ins would be read as real. */}
+        <Card tone="raised" r={24} padding={space.xl}>
+          <View style={{ alignItems: 'center', gap: space.md }}>
+            <FaceCircle face={art.face} tint={art.tint} size={72} />
+            <T v="heading" center>
+              Nothing shared yet
             </T>
-          </Card>
-        ) : (
-          <Card tone="raised" r={24} padding={space.xl}>
-            <View style={{ alignItems: 'center', gap: space.md }}>
-              <FaceCircle face={clientArt(id).face} tint={clientArt(id).tint} size={72} />
-              <T v="heading" center>
-                {parentFirst} hasn’t shared this week yet
-              </T>
-              <T v="body" color="textSecondary" center>
-                Check-ins show here when {parentFirst} shares {name}’s week.
-              </T>
-            </View>
-          </Card>
-        )}
+            <T v="body" color="textSecondary" center>
+              Check-ins and {parentFirst}’s summary of {name}’s week will show here once families can share them.
+            </T>
+          </View>
+        </Card>
       </View>
 
       <View style={{ gap: space.md }}>
@@ -363,14 +325,17 @@ function Shared({ id, name, childName, parentFirst }: { id: ClientId; name: stri
       <View style={{ gap: space.md }}>
         <SectionHeader title="Alerts" />
         <Card tone="raised" padding={space.lg} style={{ paddingVertical: space.xs }}>
-          {alex && calmMode !== 'off' ? (
-            <InfoRow
-              icon="bell"
-              tint="warn"
-              title={`Calm steps · Today, ${calmAt ?? ''}`}
-              sub={emergency ? `${emergency.by} asked emergency services at ${emergency.at}` : calmSeenAt ? `${parentFirst} saw it at ${calmSeenAt}` : `Not seen by ${parentFirst} yet`}
-              onPress={() => router.push('/therapist/alert?id=calm' as Href)}
-            />
+          {mine.length ? (
+            mine.slice(0, 5).map((a) => (
+              <InfoRow
+                key={a.id}
+                icon="bell"
+                tint="warn"
+                title={`Calm steps · ${ALERT_AT.format(new Date(a.timestamp))}`}
+                sub={a.parent_seen_at ? `${parentFirst} has seen it` : `Not seen by ${parentFirst} yet`}
+                onPress={() => router.push(`/therapist/alert?id=${a.id}` as Href)}
+              />
+            ))
           ) : (
             <InfoRow icon="check-circle" title="No alerts" sub={`You’re told straight away if ${name}’s app switches to calm steps.`} />
           )}
@@ -380,29 +345,50 @@ function Shared({ id, name, childName, parentFirst }: { id: ClientId; name: stri
   );
 }
 
-function Sessions({ id, name }: { id: ClientId; name: string }) {
-  const bookings = useBookings();
-  const notes = useApp((s) => s.sessionNotes);
-  const upcoming = bookings.filter((b) => b.clientId === id && b.date > DEMO_TODAY);
-  const past = id === 'alex' ? ALEX_PAST : [];
+/** How a past session's notes stand, for the card's tag. */
+function notesTag(s: ApiSession) {
+  if (s.notes_shared_at) return { tag: 'NOTES SHARED', tone: 'success' as const, line: 'Shared with the family' };
+  if (s.notes_written) return { tag: 'DRAFT', tone: 'neutral' as const, line: 'Notes not shared yet' };
+  return { tag: 'WRITE NOTES', tone: 'warn' as const, line: 'No notes yet' };
+}
+
+function Sessions({ id, name }: { id: string; name: string }) {
+  const sessions = useTherapistSessions();
+  const now = Date.now();
+  const mine = sessions.filter((s) => s.child_id === id && s.status !== 'cancelled');
+  const upcoming = mine
+    .filter((s) => s.status === 'booked' && new Date(s.start_time).getTime() > now)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const past = mine
+    .filter((s) => !upcoming.includes(s))
+    .sort((a, b) => b.start_time.localeCompare(a.start_time));
+
+  const card = (s: ApiSession, tag: string, tone: 'info' | 'success' | 'neutral' | 'warn', line: string) => {
+    const date = localDateIso(new Date(s.start_time));
+    const start = localStartMinutes(new Date(s.start_time));
+    return (
+      <SessionCard
+        key={s.id}
+        date={date}
+        start={start}
+        initials={name.charAt(0)}
+        tag={tag}
+        tone={tone}
+        line={line}
+        label={`${withComma(dayLabel(date))}, ${timeLabel(start)}. ${tag.toLowerCase()}. Open the session`}
+        onPress={() => router.push(`/therapist/session?id=${s.id}` as Href)}
+      />
+    );
+  };
 
   return (
     <View style={{ gap: space.xl }}>
       <View style={{ gap: space.md }}>
         <SectionHeader title="Upcoming" />
         {upcoming.length ? (
-          upcoming.map((b) => (
-            <SessionCard
-              key={b.id}
-              date={b.date}
-              start={b.start}
-              initials={name.charAt(0)}
-              tag={b.kind.toUpperCase()}
-              line={b.kind === 'In person' ? 'Parramatta clinic' : 'Video call'}
-              label={`${withComma(dayLabel(b.date))}, ${timeLabel(b.start)}, ${b.kind.toLowerCase()}. Open the session`}
-              onPress={() => router.push(`/therapist/session?id=${b.id}` as Href)}
-            />
-          ))
+          upcoming.map((s) =>
+            card(s, s.meeting_kind === 'video' ? 'VIDEO CALL' : 'IN PERSON', 'info', s.meeting_kind === 'video' ? 'Video call' : 'In person'),
+          )
         ) : (
           <T v="body" color="textMuted">
             No sessions booked.
@@ -413,22 +399,9 @@ function Sessions({ id, name }: { id: ClientId; name: string }) {
       <View style={{ gap: space.md }}>
         <SectionHeader title="Past" />
         {past.length ? (
-          past.map((b) => {
-            const n = notes[b.id];
-            const status = n?.sharedAt ? { tag: 'NOTES SHARED', tone: 'success' as const } : n ? { tag: 'DRAFT', tone: 'neutral' as const } : { tag: 'WRITE NOTES', tone: 'warn' as const };
-            return (
-              <SessionCard
-                key={b.id}
-                date={b.date}
-                start={b.start}
-                initials={name.charAt(0)}
-                tag={status.tag}
-                tone={status.tone}
-                line={`${b.kind} · ${n?.sharedAt ? `Shared ${n.sharedAt}` : n ? 'Notes not shared yet' : 'No notes yet'}`}
-                label={`${withComma(dayLabel(b.date))}, ${timeLabel(b.start)}. ${status.tag.toLowerCase()}. Open the session`}
-                onPress={() => router.push(`/therapist/session?id=${b.id}` as Href)}
-              />
-            );
+          past.map((s) => {
+            const n = notesTag(s);
+            return card(s, n.tag, n.tone, `${s.meeting_kind === 'video' ? 'Video call' : 'In person'} · ${n.line}`);
           })
         ) : (
           <T v="body" color="textMuted">

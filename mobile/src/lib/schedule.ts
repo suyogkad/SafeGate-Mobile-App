@@ -113,7 +113,7 @@ export function bookingsFor(session: Session | null, lengthMin: number, therapis
 
 export type Block =
   | { type: 'booked'; date: string; start: number; end: number; booking: Booking }
-  | { type: 'open'; date: string; start: number; end: number; kind: MeetKind | null; extraId?: string }
+  | { type: 'open'; date: string; start: number; end: number; kind: MeetKind | null; extraId?: string; slotId?: string }
   | { type: 'away'; date: string; label: string }
   | { type: 'off'; date: string };
 
@@ -172,15 +172,24 @@ export const partOfDay = (min: number) => (min < 720 ? 'Morning' : min < 1020 ? 
 /** One day on the calendar, built from the backend rather than from demo hours.
  *
  * Produces the same Block shape the calendar already renders, so a real slot and a
- * real session draw exactly like the demo ones did. A day with nothing in it is
- * "off" -- there are no weekly working hours on the server yet, so the app cannot
- * tell "not working" from "working but nothing booked". */
+ * real session draw exactly like the demo ones did. `timeOff` is what makes a quiet
+ * day read as "Away" rather than "Off": both have no open times, but only one of
+ * them is a day the therapist chose to block out. */
 export function realBlocksForDay(
   slots: { id: string; start_time: string; end_time: string; is_booked: boolean }[],
-  sessions: { id: string; start_time: string; end_time: string; status: string; child_id: string; child_name: string | null; video_room_url: string | null }[],
+  sessions: { id: string; start_time: string; end_time: string; status: string; child_id: string; child_name: string | null; meeting_kind: 'video' | 'in_person' }[],
   date: string,
+  timeOff: { from_date: string; to_date: string; label: string }[] = [],
 ): Block[] {
   const out: Block[] = [];
+
+  const away = timeOff.find((t) => date >= t.from_date && date <= t.to_date);
+  if (away) {
+    // A booked session still shows on a day off: it is still happening unless the
+    // therapist cancels it, and hiding it would be the worst kind of quiet.
+    const booked = sessions.filter((s) => s.status === 'booked' && localDateIso(new Date(s.start_time)) === date);
+    if (booked.length === 0) return [{ type: 'away', date, label: away.label }];
+  }
 
   for (const s of sessions) {
     if (s.status !== 'booked' && s.status !== 'completed') continue;
@@ -199,7 +208,7 @@ export function realBlocksForDay(
         date,
         start,
         lengthMin: Math.max(1, end - start),
-        kind: s.video_room_url ? 'Video call' : 'In person',
+        kind: s.meeting_kind === 'video' ? 'Video call' : 'In person',
         clientName: s.child_name ?? 'Client',
       },
     });
@@ -215,6 +224,7 @@ export function realBlocksForDay(
       start: localStartMinutes(at),
       end: localStartMinutes(new Date(o.end_time)),
       kind: null,
+      slotId: o.id,
     });
   }
 

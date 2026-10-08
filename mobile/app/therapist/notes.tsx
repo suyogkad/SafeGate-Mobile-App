@@ -1,15 +1,16 @@
 /**
- * T08 Write session notes. The parent's Session notes laid out as a form, in two clearly separate parts (rule 21):
- *  - "Shared with Jordan" (marked JORDAN WILL SEE THIS): up to 3 highlights (a picture + one line), "What I'd like
- *    Jordan to know", up to 3 things to try at home. This becomes the parent's Session notes.
+ * T08 Write session notes, in two clearly separate parts (rule 21):
+ *  - "Shared with <parent>" (marked <PARENT> WILL SEE THIS): up to 3 highlights (a picture + one line),
+ *    "What I'd like <parent> to know", up to 3 things to try at home. This becomes the parent's Session notes.
  *  - "My working notes" (grey, with a lock): only the therapist sees them; the family and the child never do.
- * A hint keeps the shared part plain ("Write for Jordan: plain words, no scores"). Share asks first, then tells the
- * parent (a notification) and clears "Write notes for Alex". Save draft keeps it for later without sharing.
- * Once shared, changes are shared again with "Share the changes"; working notes can be saved on their own.
- * ?session=<booking id>
+ *
+ * The separation is the server's, not this screen's: the family's endpoint has no
+ * working-notes field at all, and nothing reaches them until Share is tapped. Save
+ * draft keeps everything for later without sharing any of it.
+ * ?session=<session id>
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { goBack, Header } from '@/components/Header';
 import { EmojiCircle, NumberCircle, WorkingNotesCard } from '@/components/NotesParts';
@@ -25,70 +26,110 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
-import { ALEX_PAST, CLIENTS, type SessionNotes } from '@/data/practice';
-import { dayShort } from '@/lib/schedule';
-import { useApp, useChildName } from '@/store/app';
+import type { SessionNotesDraft } from '@/api/therapist';
+import { useClients } from '@/lib/clients';
+import { dayShort, localDateIso } from '@/lib/schedule';
+import { draftOf, useSession, useSessionNotes } from '@/lib/therapist';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 /** Pictures a highlight can have (tap to change). */
 const PICTURES = ['⭐', '🦶', '🏫', '💬', '🧩', '🌿', '🎨', '📝'];
 
-type Draft = Omit<SessionNotes, 'sharedAt'>;
+/** An empty row each, so the form starts ready to type into. */
+const blank = (d: SessionNotesDraft): SessionNotesDraft => ({
+  ...d,
+  highlights: d.highlights.length ? d.highlights : [{ emoji: '⭐', text: '' }],
+  try_at_home: d.try_at_home.length ? d.try_at_home : [{ title: '', line: '' }],
+});
 
 export default function WriteNotes() {
   const { c } = useTheme();
   const params = useLocalSearchParams<{ session?: string }>();
-  const session = ALEX_PAST.find((b) => b.id === params.session) ?? ALEX_PAST[0];
-  const saved = useApp((s) => s.sessionNotes[session.id]);
-  const name = useChildName();
-  const parentFirst = CLIENTS.alex.parentFirst;
-  const when = dayShort(session.date);
+  const { session } = useSession(params.session);
+  const { notes, loading, save, share } = useSessionNotes(params.session);
+  const clients = useClients();
 
-  const [d, setD] = useState<Draft>(() =>
-    saved
-      ? { highlights: saved.highlights, shared: saved.shared, tryAtHome: saved.tryAtHome, working: saved.working }
-      : { highlights: [{ emoji: '⭐', text: '' }], shared: '', tryAtHome: [{ title: '', line: '' }], working: '' },
-  );
+  const [d, setD] = useState<SessionNotesDraft>(() => blank(draftOf(null)));
+  const [started, setStarted] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const alreadyShared = !!saved?.sharedAt;
 
-  const clean = (x: Draft): Draft => ({
+  // Fill the form once, when what is already written arrives: refilling it later
+  // would throw away whatever the therapist had typed in the meantime.
+  useEffect(() => {
+    if (!started && notes) {
+      setD(blank(draftOf(notes)));
+      setStarted(true);
+    }
+  }, [notes, started]);
+
+  const name = session?.child_name ?? 'this child';
+  const parentFirst = clients.find((cl) => cl.id === session?.child_id)?.parentFirst || 'the family';
+  const when = session ? dayShort(localDateIso(new Date(session.start_time))) : '';
+  const alreadyShared = !!notes?.shared_at;
+  const back = `/therapist/session?id=${params.session ?? ''}` as Href;
+
+  const clean = (x: SessionNotesDraft): SessionNotesDraft => ({
     highlights: x.highlights.map((h) => ({ ...h, text: h.text.trim() })).filter((h) => h.text),
     shared: x.shared.trim(),
-    tryAtHome: x.tryAtHome.map((t) => ({ title: t.title.trim(), line: t.line.trim() })).filter((t) => t.title),
+    try_at_home: x.try_at_home.map((t) => ({ title: t.title.trim(), line: t.line.trim() })).filter((t) => t.title),
     working: x.working.trim(),
   });
-  const edit = (patch: Partial<Draft>) => {
+  const edit = (patch: Partial<SessionNotesDraft>) => {
     setD((x) => ({ ...x, ...patch }));
     setError(null);
   };
 
   const askToShare = () => {
     const x = clean(d);
-    if (!x.highlights.length && !x.shared) {
+    if (!x.highlights.length && !x.shared && !x.try_at_home.length) {
       setError(`Add a highlight or a few words for ${parentFirst} first.`);
       return;
     }
     setConfirm(true);
   };
-  const share = () => {
-    useApp.getState().saveNotes(session.id, clean(d), true, when);
+
+  const doShare = async () => {
+    setBusy(true);
+    const failed = await share(clean(d));
+    setBusy(false);
     setConfirm(false);
-    router.replace(`/therapist/session?id=${session.id}` as Href);
+    if (failed) {
+      setError(failed);
+      return;
+    }
+    router.replace(back);
   };
-  const saveDraft = () => {
-    // Once shared, only the working notes change here: the family's part changes only with "Share the changes".
-    const x = clean(d);
-    useApp.getState().saveNotes(session.id, alreadyShared && saved ? { ...saved, working: x.working } : x, false, when);
-    goBack(`/therapist/session?id=${session.id}` as Href);
+
+  const saveDraft = async () => {
+    setBusy(true);
+    const failed = await save(clean(d));
+    setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
+    goBack(back);
   };
+
+  if (!session && !loading) {
+    return (
+      <Screen backdrop="brand" header={<Header title="Notes" left="close" getHelp={false} fallback="/therapist/calendar" />}>
+        <Card tone="raised" padding={space.lg}>
+          <T v="bodyLg" color="textSecondary">
+            This session isn’t on your calendar any more.
+          </T>
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen
       backdrop="brand"
-      header={<Header title={`Notes · ${when}`} left="close" getHelp={false} fallback={`/therapist/session?id=${session.id}` as Href} />}
+      header={<Header title={when ? `Notes · ${when}` : 'Notes'} left="close" getHelp={false} fallback={back} />}
       footer={
         <View style={{ gap: space.sm }}>
           {error ? (
@@ -96,8 +137,19 @@ export default function WriteNotes() {
               {error}
             </T>
           ) : null}
-          <Button title={alreadyShared ? 'Share the changes' : `Share with ${parentFirst}`} icon="send" onPress={askToShare} />
-          <Button title={alreadyShared ? 'Save my working notes only' : 'Save draft'} variant="text" style={{ alignSelf: 'center' }} onPress={saveDraft} />
+          <Button
+            title={alreadyShared ? 'Share the changes' : `Share with ${parentFirst}`}
+            icon="send"
+            disabled={busy}
+            onPress={askToShare}
+          />
+          <Button
+            title={alreadyShared ? 'Save without sharing the changes' : 'Save draft'}
+            variant="text"
+            style={{ alignSelf: 'center' }}
+            disabled={busy}
+            onPress={saveDraft}
+          />
         </View>
       }
     >
@@ -123,7 +175,13 @@ export default function WriteNotes() {
                     <Tappable
                       label={`Picture for highlight ${i + 1}: ${h.emoji}. Change`}
                       visualHeight={48}
-                      onPress={() => edit({ highlights: d.highlights.map((x, j) => (j === i ? { ...x, emoji: PICTURES[(PICTURES.indexOf(x.emoji) + 1) % PICTURES.length] } : x)) })}
+                      onPress={() =>
+                        edit({
+                          highlights: d.highlights.map((x, j) =>
+                            j === i ? { ...x, emoji: PICTURES[(PICTURES.indexOf(x.emoji) + 1) % PICTURES.length] } : x,
+                          ),
+                        })
+                      }
                     >
                       <EmojiCircle emoji={h.emoji} i={i} />
                     </Tappable>
@@ -136,12 +194,24 @@ export default function WriteNotes() {
                       />
                     </View>
                     {d.highlights.length > 1 ? (
-                      <IconButton icon="x" label={`Remove highlight ${i + 1}`} variant="plain" onPress={() => edit({ highlights: d.highlights.filter((_, j) => j !== i) })} />
+                      <IconButton
+                        icon="x"
+                        label={`Remove highlight ${i + 1}`}
+                        variant="plain"
+                        onPress={() => edit({ highlights: d.highlights.filter((_, j) => j !== i) })}
+                      />
                     ) : null}
                   </View>
                 ))}
                 {d.highlights.length < 3 ? (
-                  <Button title="Add a highlight" variant="text" iconLeft="plus" onPress={() => edit({ highlights: [...d.highlights, { emoji: PICTURES[d.highlights.length % PICTURES.length], text: '' }] })} />
+                  <Button
+                    title="Add a highlight"
+                    variant="text"
+                    iconLeft="plus"
+                    onPress={() =>
+                      edit({ highlights: [...d.highlights, { emoji: PICTURES[d.highlights.length % PICTURES.length], text: '' }] })
+                    }
+                  />
                 ) : null}
               </View>
 
@@ -157,7 +227,7 @@ export default function WriteNotes() {
 
               <View style={{ gap: space.sm }}>
                 <T v="label">Things to try at home</T>
-                {d.tryAtHome.map((t, i) => (
+                {d.try_at_home.map((t, i) => (
                   <Card key={i} tone="outlined" padding={space.md}>
                     <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
                       <View style={{ paddingTop: space.sm }}>
@@ -168,23 +238,33 @@ export default function WriteNotes() {
                           a11yLabel={`Thing to try ${i + 1}: title`}
                           placeholder="Same order every morning"
                           value={t.title}
-                          onChangeText={(v) => edit({ tryAtHome: d.tryAtHome.map((x, j) => (j === i ? { ...x, title: v } : x)) })}
+                          onChangeText={(v) => edit({ try_at_home: d.try_at_home.map((x, j) => (j === i ? { ...x, title: v } : x)) })}
                         />
                         <Input
                           a11yLabel={`Thing to try ${i + 1}: one line`}
                           placeholder="One short line about how"
                           value={t.line}
-                          onChangeText={(v) => edit({ tryAtHome: d.tryAtHome.map((x, j) => (j === i ? { ...x, line: v } : x)) })}
+                          onChangeText={(v) => edit({ try_at_home: d.try_at_home.map((x, j) => (j === i ? { ...x, line: v } : x)) })}
                         />
                       </View>
-                      {d.tryAtHome.length > 1 ? (
-                        <IconButton icon="x" label={`Remove thing to try ${i + 1}`} variant="plain" onPress={() => edit({ tryAtHome: d.tryAtHome.filter((_, j) => j !== i) })} />
+                      {d.try_at_home.length > 1 ? (
+                        <IconButton
+                          icon="x"
+                          label={`Remove thing to try ${i + 1}`}
+                          variant="plain"
+                          onPress={() => edit({ try_at_home: d.try_at_home.filter((_, j) => j !== i) })}
+                        />
                       ) : null}
                     </View>
                   </Card>
                 ))}
-                {d.tryAtHome.length < 3 ? (
-                  <Button title="Add something to try" variant="text" iconLeft="plus" onPress={() => edit({ tryAtHome: [...d.tryAtHome, { title: '', line: '' }] })} />
+                {d.try_at_home.length < 3 ? (
+                  <Button
+                    title="Add something to try"
+                    variant="text"
+                    iconLeft="plus"
+                    onPress={() => edit({ try_at_home: [...d.try_at_home, { title: '', line: '' }] })}
+                  />
                 ) : null}
               </View>
             </View>
@@ -194,16 +274,28 @@ export default function WriteNotes() {
         <View style={{ gap: space.md }}>
           <SectionHeader title="My working notes" />
           <WorkingNotesCard parentFirst={parentFirst} name={name}>
-            <Input a11yLabel="My working notes. Only you can see these." area multiline placeholder="Your own notes" value={d.working} onChangeText={(v) => edit({ working: v })} style={{ minHeight: 120 }} />
+            <Input
+              a11yLabel="My working notes. Only you can see these."
+              area
+              multiline
+              placeholder="Your own notes"
+              value={d.working}
+              onChangeText={(v) => edit({ working: v })}
+              style={{ minHeight: 120 }}
+            />
           </WorkingNotesCard>
         </View>
       </Stagger>
 
-      <Dialog visible={confirm} onClose={() => setConfirm(false)} title={alreadyShared ? `Share the changes with ${parentFirst}?` : `Share these notes with ${parentFirst}?`}>
+      <Dialog
+        visible={confirm}
+        onClose={() => setConfirm(false)}
+        title={alreadyShared ? `Share the changes with ${parentFirst}?` : `Share these notes with ${parentFirst}?`}
+      >
         <T v="body" color="textSecondary" center>
-          {parentFirst} will be told and can read them in Session notes. Your working notes stay with you.
+          {parentFirst} can read them in Session notes. Your working notes stay with you.
         </T>
-        <Button title="Share" icon="send" onPress={share} />
+        <Button title="Share" icon="send" disabled={busy} onPress={doShare} />
         <Button title="Not yet" variant="outline" onPress={() => setConfirm(false)} />
       </Dialog>
     </Screen>

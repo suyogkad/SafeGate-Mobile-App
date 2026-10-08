@@ -1,17 +1,19 @@
 /**
- * T04 Add or change a time (the raised "+" tab, Calendar, Today). Built like Book: day tiles, time chips, the
- * how-to-meet cards and a sticky bar that says exactly what will be saved. Nothing is typed except a time-off name.
- *  - add (default, ?date=): day · starts at · length · how you meet · repeat every week
- *  - ?date=&start=[&extra=]: change or remove an open time
+ * T04 Add or change a time (the raised "+" tab, Calendar, Today). Day tiles, a time chooser,
+ * and a sticky bar that says exactly what will be saved. Nothing is typed except a time-off name.
+ *  - add (default, ?date=): day · starts at · length · repeat every week
+ *  - ?slot=<id>: change or remove one open time
  *  - ?mode=off: add time off (from · to · name)
- *  - ?booking=: a booked session, read-only (moving a family's session needs them, so it's out of scope) → Open session
+ *  - ?session=<id>: a booked session, read-only — moving a family's session needs the family
+ *
+ * "Repeat every week" writes into the weekly hours; a one-off adds a single open time. Both
+ * go to the server, so a family's Book screen changes the moment this screen saves.
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { DayStrip } from '@/components/DayStrip';
 import { goBack, Header } from '@/components/Header';
-import { OptionRow } from '@/components/Options';
 import { Screen } from '@/components/Screen';
 import { TimeChooser } from '@/components/TimeChooser';
 import { Stagger } from '@/components/ui/Appear';
@@ -25,26 +27,55 @@ import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
 import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
-import { CLIENTS, type Availability, type Booking, type MeetKind } from '@/data/practice';
-import { addDays, blocksForDay, dayLabel, DEMO_TODAY, rangeLabel, weekDays, weekdayOf, weekStart, type Block } from '@/lib/schedule';
-import { useApp, useBookings, useChildName, useTherapist } from '@/store/app';
+import { addOpenTime, addTimeOff, removeOpenTime, type ApiSlot } from '@/api/therapist';
+import {
+  addDays,
+  dayLabel,
+  localDateIso,
+  localStartMinutes,
+  rangeLabel,
+  realBlocksForDay,
+  todayIso,
+  weekdayOf,
+  weekDays,
+  weekStart,
+  type Block,
+} from '@/lib/schedule';
+import { useClients, useMyOpenTimesLive, useTherapistSessions } from '@/lib/clients';
+import { useMe } from '@/lib/therapist';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-const FIRST = addDays(DEMO_TODAY, 1);
+const FIRST = addDays(todayIso(), 1);
 const THIS_WEEK = weekStart(FIRST);
 const LAST_WEEK = addDays(THIS_WEEK, 35);
 const LENGTHS = ['45 min', '50 min', '60 min'] as const;
 
+/** A local date and a minutes-from-midnight time, as the UTC instant the server stores. */
+const atLocal = (date: string, minutes: number) => {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d, Math.floor(minutes / 60), minutes % 60, 0, 0).toISOString();
+};
+
 /** Week arrows + the day strip (Off / Away / Open / Full under each day), as on the Calendar. */
-function WeekPicker({ value, onChange, min = FIRST, label }: { value: string; onChange: (d: string) => void; min?: string; label: string }) {
-  const a = useApp((s) => s.availability);
-  const bookings = useBookings();
+function WeekPicker({
+  value,
+  onChange,
+  min = FIRST,
+  label,
+  blocksFor,
+}: {
+  value: string;
+  onChange: (d: string) => void;
+  min?: string;
+  label: string;
+  blocksFor: (d: string) => Block[];
+}) {
   const [monday, setMonday] = useState(weekStart(value));
   const days = weekDays(monday);
   const wordFor = (d: string) => {
     if (d < min) return '';
-    const bs = blocksForDay(a, bookings, d);
+    const bs = blocksFor(d);
     if (bs[0]?.type === 'away') return 'Away';
     if (bs[0]?.type === 'off') return 'Off';
     return bs.some((b) => b.type === 'open') ? 'Open' : 'Full';
@@ -53,11 +84,19 @@ function WeekPicker({ value, onChange, min = FIRST, label }: { value: string; on
   return (
     <View style={{ gap: space.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-        {monday > weekStart(min) ? <IconButton icon="chevron-left" label={`${label}: week before`} variant="soft" onPress={() => setMonday(addDays(monday, -7))} /> : <View style={{ width: 48 }} />}
+        {monday > weekStart(min) ? (
+          <IconButton icon="chevron-left" label={`${label}: week before`} variant="soft" onPress={() => setMonday(addDays(monday, -7))} />
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
         <T v="section" center style={{ flex: 1 }}>
           Week of {a11[1]} {a11[2]}
         </T>
-        {monday < LAST_WEEK ? <IconButton icon="chevron-right" label={`${label}: week after`} variant="soft" onPress={() => setMonday(addDays(monday, 7))} /> : <View style={{ width: 48 }} />}
+        {monday < LAST_WEEK ? (
+          <IconButton icon="chevron-right" label={`${label}: week after`} variant="soft" onPress={() => setMonday(addDays(monday, 7))} />
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
       </View>
       <DayStrip days={days} selected={value} onSelect={(d) => d >= min && onChange(d)} wordFor={wordFor} a11yFor={(d) => (d < min ? 'not available' : wordFor(d))} />
     </View>
@@ -79,29 +118,48 @@ function Footer({ line, children }: { line: string; children: React.ReactNode })
   );
 }
 
-const leave = () => goBack('/therapist/calendar');
+/** One day's blocks from the real slots, sessions and time off. */
+function useDayBlocks() {
+  const { me } = useMe();
+  const { slots, reload } = useMyOpenTimesLive(me?.id);
+  const sessions = useTherapistSessions();
+  const timeOff = me?.hours.time_off ?? [];
+  return {
+    slots,
+    reload,
+    blocksFor: (d: string) => realBlocksForDay(slots, sessions, d, timeOff),
+  };
+}
 
 /** Add time off: from · to (days) · an optional name. */
-function TimeOff() {
+function TimeOff({ blocksFor }: { blocksFor: (d: string) => Block[] }) {
   const [from, setFrom] = useState(FIRST);
   const [to, setTo] = useState(FIRST);
   const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const end = to < from ? from : to;
   const line = from === end ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(end)}`;
+
+  const add = async () => {
+    setBusy(true);
+    try {
+      await addTimeOff(from, end, name.trim());
+      goBack('/therapist/availability');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add that.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Screen
       backdrop="brand"
       header={<Header title="Add time off" left="close" getHelp={false} fallback="/therapist/availability" />}
       footer={
-        <Footer line={`${line}${name.trim() ? ` · ${name.trim()}` : ''} · families can’t book these days`}>
-          <Button
-            title="Add time off"
-            icon="check"
-            onPress={() => {
-              useApp.getState().addTimeOff({ from, to: end, label: name.trim() });
-              goBack('/therapist/availability');
-            }}
-          />
+        <Footer line={error ?? `${line}${name.trim() ? ` · ${name.trim()}` : ''} · families can’t book these days`}>
+          <Button title="Add time off" icon="check" disabled={busy} onPress={add} />
         </Footer>
       }
     >
@@ -109,14 +167,19 @@ function TimeOff() {
         <T v="bodyLg">Families won’t see any times on these days. Sessions already booked stay on your calendar.</T>
         <View style={{ gap: space.md }}>
           <SectionHeader title="From" />
-          <WeekPicker label="From" value={from} onChange={(d) => {
-            setFrom(d);
-            if (to < d) setTo(d);
-          }} />
+          <WeekPicker
+            label="From"
+            value={from}
+            blocksFor={blocksFor}
+            onChange={(d) => {
+              setFrom(d);
+              if (to < d) setTo(d);
+            }}
+          />
         </View>
         <View style={{ gap: space.md }}>
           <SectionHeader title="Until" />
-          <WeekPicker label="Until" value={end} min={from} onChange={setTo} />
+          <WeekPicker label="Until" value={end} min={from} blocksFor={blocksFor} onChange={setTo} />
         </View>
         <Input label="Name (optional)" value={name} onChangeText={setName} placeholder="Conference" />
       </Stagger>
@@ -125,31 +188,50 @@ function TimeOff() {
 }
 
 /** A booked session: read-only here; the session itself opens from "Open session". */
-function Booked({ booking }: { booking: Booking }) {
-  const name = useChildName();
-  const who = booking.clientId === 'alex' ? name : CLIENTS[booking.clientId].name;
-  const parent = CLIENTS[booking.clientId].parentFirst;
+function Booked({ sessionId }: { sessionId: string }) {
+  const sessions = useTherapistSessions();
+  const clients = useClients();
+  const s = sessions.find((x) => x.id === sessionId);
+
+  if (!s) {
+    return (
+      <Screen backdrop="brand" header={<Header title="Session" left="close" getHelp={false} fallback="/therapist/calendar" />}>
+        <T v="body" color="textMuted">
+          Loading…
+        </T>
+      </Screen>
+    );
+  }
+
+  const who = s.child_name ?? 'this child';
+  const client = clients.find((cl) => cl.id === s.child_id);
+  const date = localDateIso(new Date(s.start_time));
+  const start = localStartMinutes(new Date(s.start_time));
+  const end = localStartMinutes(new Date(s.end_time));
+
   return (
     <Screen
       backdrop="brand"
       header={<Header title={`Session with ${who}`} left="close" getHelp={false} fallback="/therapist/calendar" />}
-      footer={<Button title="Open session" icon="arrow-right" onPress={() => router.replace(`/therapist/session?id=${booking.id}` as Href)} />}
+      footer={<Button title="Open session" icon="arrow-right" onPress={() => router.replace(`/therapist/session?id=${s.id}` as Href)} />}
     >
       <Stagger>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <Avatar initials={who.charAt(0)} size={52} tone="brand" />
             <View style={{ flex: 1, gap: 2 }}>
-              <Badge label={booking.kind.toUpperCase()} tone="info" />
-              <T v="section">{dayLabel(booking.date)}</T>
+              <Badge label={s.meeting_kind === 'video' ? 'VIDEO CALL' : 'IN PERSON'} tone="info" />
+              <T v="section">{dayLabel(date)}</T>
               <T v="bodySm" color="textMuted">
-                {rangeLabel(booking.start, booking.start + booking.lengthMin)} · {who} · with {CLIENTS[booking.clientId].parent}
+                {rangeLabel(start, end)} · {who}
+                {client?.parent ? ` · with ${client.parent}` : ''}
               </T>
             </View>
           </View>
         </Card>
         <T v="body" color="textSecondary">
-          This time is booked. To move it, talk with {parent} first: the family books a new time themselves.
+          This time is booked. To move it, talk with {client?.parentFirst || 'the family'} first: the family books a new
+          time themselves.
         </T>
       </Stagger>
     </Screen>
@@ -157,53 +239,105 @@ function Booked({ booking }: { booking: Booking }) {
 }
 
 export default function SlotScreen() {
-  const params = useLocalSearchParams<{ mode?: string; booking?: string; date?: string; start?: string; extra?: string }>();
-  const bookings = useBookings();
-  if (params.mode === 'off') return <TimeOff />;
-  const booking = params.booking ? bookings.find((b) => b.id === params.booking) : undefined;
-  if (booking) return <Booked booking={booking} />;
-  return <AddOrChange date={params.date} start={params.start ? Number(params.start) : undefined} extraId={params.extra} />;
+  const params = useLocalSearchParams<{ mode?: string; session?: string; date?: string; slot?: string }>();
+  const { slots, reload, blocksFor } = useDayBlocks();
+
+  if (params.mode === 'off') return <TimeOff blocksFor={blocksFor} />;
+  if (params.session) return <Booked sessionId={params.session} />;
+  return <AddOrChange date={params.date} slotId={params.slot} slots={slots} reload={reload} blocksFor={blocksFor} />;
 }
 
 /** Add a time, or change / remove an open one. */
-function AddOrChange({ date: startDate, start: oldStart, extraId }: { date?: string; start?: number; extraId?: string }) {
-  const a = useApp((s) => s.availability);
-  const bookings = useBookings();
-  const clinic = useTherapist('priya').clinic;
-  const changing = oldStart !== undefined && !!startDate;
-  const oldExtra = extraId ? a.extra.find((e) => e.id === extraId) : undefined;
+function AddOrChange({
+  date: startDate,
+  slotId,
+  slots,
+  reload,
+  blocksFor,
+}: {
+  date?: string;
+  slotId?: string;
+  slots: ApiSlot[];
+  reload: () => void;
+  blocksFor: (d: string) => Block[];
+}) {
+  const { me, saveWorkingHours } = useMe();
+  const existing = slotId ? slots.find((s) => s.id === slotId) : undefined;
+  const changing = !!existing;
 
   const [date, setDate] = useState(startDate && startDate >= FIRST ? startDate : FIRST);
-  const [start, setStart] = useState<number>(oldStart ?? 600);
-  const [length, setLength] = useState<Availability['lengthMin']>((oldExtra?.lengthMin as Availability['lengthMin']) ?? a.lengthMin);
-  const [kind, setKind] = useState<MeetKind | null>(oldExtra?.kind ?? null);
+  const [start, setStart] = useState<number | null>(null);
+  const [length, setLength] = useState<number | null>(null);
   const [weekly, setWeekly] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const end = start + length;
-  // Other things already on that day (the time being changed doesn't count against itself).
-  const dayBlocks = blocksForDay(a, bookings, date).filter((b) => !(changing && b.type === 'open' && b.date === startDate && b.start === oldStart));
+  const h = me?.hours;
+  const openAt = existing ? localStartMinutes(new Date(existing.start_time)) : 600;
+  const existingLength = existing
+    ? localStartMinutes(new Date(existing.end_time)) - localStartMinutes(new Date(existing.start_time))
+    : null;
+  const from = start ?? openAt;
+  const len = length ?? existingLength ?? h?.session_length_min ?? 50;
+  const end = from + len;
+  const day = existing ? localDateIso(new Date(existing.start_time)) : date;
+
+  // Other things already on that day. The time being changed does not count against itself.
+  const dayBlocks = blocksFor(day).filter((b) => !(b.type === 'open' && b.slotId === slotId));
   const clash = dayBlocks.find(
-    (b): b is Extract<Block, { type: 'booked' | 'open' }> => (b.type === 'booked' || b.type === 'open') && start < b.end && b.start < end,
+    (b): b is Extract<Block, { type: 'booked' | 'open' }> => (b.type === 'booked' || b.type === 'open') && from < b.end && b.start < end,
   );
   const away = dayBlocks[0]?.type === 'away' ? dayBlocks[0] : null;
-  const kinds: { k: MeetKind | null; label: string; emoji: string }[] = [
-    ...(a.video && a.inPerson ? [{ k: null, label: 'Either way (the family picks)', emoji: '🔀' }] : []),
-    ...(a.video ? [{ k: 'Video call' as const, label: 'Video call', emoji: '📹' }] : []),
-    ...(a.inPerson ? [{ k: 'In person' as const, label: `In person in ${clinic?.name ?? 'the clinic'}`, emoji: '🏥' }] : []),
-  ];
-  const kindWord = kind ?? (a.video && a.inPerson ? 'Video call or in person' : a.video ? 'Video call' : 'In person');
-  const line = `${dayLabel(date)}, ${rangeLabel(start, end)} · ${kindWord}${weekly ? ' · every week' : ''}`;
+  const line = `${dayLabel(day)}, ${rangeLabel(from, end)}${weekly ? ' · every week' : ''}`;
 
-  const save = () => {
-    const s = useApp.getState();
-    if (changing) s.removeOpenTime(startDate!, oldStart!, extraId);
-    if (weekly) {
-      const day = weekdayOf(date);
-      s.setDayHours(day, [...a.weekly[day], { start, end: start + Math.max(length, a.lengthMin) }]);
-    } else {
-      s.addExtraTime({ date, start, lengthMin: length, kind });
+  const finish = () => {
+    reload();
+    goBack('/therapist/calendar');
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      if (existing) await removeOpenTime(existing.id);
+      if (weekly && h) {
+        // Into the weekly hours, so it comes back every week from now on.
+        const key = weekdayOf(day);
+        const failed = await saveWorkingHours({
+          weekly: { ...h.weekly, [key]: [...(h.weekly[key] ?? []), { start: from, end }] },
+          session_length_min: h.session_length_min,
+          gap_min: h.gap_min,
+          offers_video: h.offers_video,
+          offers_in_person: h.offers_in_person,
+          booking_window_weeks: h.booking_window_weeks,
+          notice_days: h.notice_days,
+          timezone: h.timezone,
+        });
+        if (failed) {
+          setError(failed);
+          return;
+        }
+      } else {
+        await addOpenTime(atLocal(day, from), atLocal(day, end));
+      }
+      finish();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save that time.');
+    } finally {
+      setBusy(false);
     }
-    leave();
+  };
+
+  const remove = async () => {
+    if (!existing) return;
+    setBusy(true);
+    try {
+      await removeOpenTime(existing.id);
+      finish();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove that time.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -211,52 +345,53 @@ function AddOrChange({ date: startDate, start: oldStart, extraId }: { date?: str
       backdrop="brand"
       header={<Header title={changing ? 'Change this time' : 'Add a time'} left="close" getHelp={false} fallback="/therapist/calendar" />}
       footer={
-        <Footer line={clash ? `That clashes with ${clash.type === 'booked' ? 'a booked session' : 'an open time'} at ${rangeLabel(clash.start, clash.end)}` : line}>
-          <Button title={changing ? 'Save this time' : 'Add time'} icon="check" disabled={!!clash || !!away} onPress={save} />
+        <Footer
+          line={
+            error ??
+            (clash
+              ? `That clashes with ${clash.type === 'booked' ? 'a booked session' : 'an open time'} at ${rangeLabel(clash.start, clash.end)}`
+              : line)
+          }
+        >
+          <Button title={changing ? 'Save this time' : 'Add time'} icon="check" disabled={!!clash || !!away || busy} onPress={save} />
           {changing ? (
-            <Button
-              title="Remove this time"
-              variant="text"
-              iconLeft="trash-2"
-              style={{ alignSelf: 'center' }}
-              onPress={() => {
-                useApp.getState().removeOpenTime(startDate!, oldStart!, extraId);
-                leave();
-              }}
-            />
+            <Button title="Remove this time" variant="text" iconLeft="trash-2" style={{ alignSelf: 'center' }} disabled={busy} onPress={remove} />
           ) : null}
         </Footer>
       }
     >
       <Stagger>
-        <View style={{ gap: space.md }}>
-          <SectionHeader title="Day" />
-          <WeekPicker label="Day" value={date} onChange={setDate} />
-          {away ? (
-            <Card tone="help" padding={space.lg}>
-              <T v="bodySm" color="onHelpTint">
-                You’re away that day ({away.label}). Pick another day, or remove the time off in My hours.
-              </T>
-            </Card>
-          ) : null}
-        </View>
+        {changing ? null : (
+          <View style={{ gap: space.md }}>
+            <SectionHeader title="Day" />
+            <WeekPicker label="Day" value={date} blocksFor={blocksFor} onChange={setDate} />
+          </View>
+        )}
+        {away ? (
+          <Card tone="help" padding={space.lg}>
+            <T v="bodySm" color="onHelpTint">
+              You’re away that day ({away.label}). Pick another day, or remove the time off in My hours.
+            </T>
+          </Card>
+        ) : null}
         <View style={{ gap: space.md }}>
           <SectionHeader title="Starts at" />
-          <TimeChooser label="Starts at" value={start} onChange={setStart} />
+          <TimeChooser label="Starts at" value={from} onChange={setStart} />
         </View>
         <View style={{ gap: space.md }}>
           <SectionHeader title="Length" />
-          <Segmented label="Length" options={LENGTHS} value={`${length} min` as (typeof LENGTHS)[number]} onChange={(v) => setLength(parseInt(v, 10) as Availability['lengthMin'])} />
+          <Segmented
+            label="Length"
+            options={LENGTHS}
+            value={`${len} min` as (typeof LENGTHS)[number]}
+            onChange={(v) => setLength(parseInt(v, 10))}
+          />
         </View>
-        <View style={{ gap: space.md }}>
-          <SectionHeader title="How you meet" />
-          {kinds.map((o) => (
-            <OptionRow key={o.label} label={o.label} emoji={o.emoji} selected={kind === o.k} onPress={() => setKind(o.k)} />
-          ))}
-        </View>
+        {/* How you meet is set once, in My hours: a family picks video or in person
+            when they book, from what the therapist offers. */}
         <Card tone="raised" padding={space.lg} style={{ paddingVertical: space.xs }}>
           <SwitchRow
-            title={`Repeat every ${dayLabel(date).split(' ')[0]}`}
+            title={`Repeat every ${dayLabel(day).split(' ')[0]}`}
             subtitle={weekly ? 'Adds these hours to your weekly hours' : 'Just this once'}
             on={weekly}
             onToggle={() => setWeekly((w) => !w)}

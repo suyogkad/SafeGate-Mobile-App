@@ -64,9 +64,13 @@ class AvailabilitySlotOut(BaseModel):
     created_at: datetime
 
 
+MeetingKind = Literal["video", "in_person"]
+
+
 class SessionBookingCreate(BaseModel):
     child_id: uuid.UUID
     availability_slot_id: uuid.UUID
+    meeting_kind: MeetingKind = "video"
 
 
 class SessionRescheduleRequest(BaseModel):
@@ -83,10 +87,16 @@ class SessionOut(BaseModel):
     start_time: datetime
     end_time: datetime
     status: SessionStatus
+    meeting_kind: MeetingKind
     video_room_url: str | None
     created_at: datetime
     child_name: str | None = None
     therapist_name: str | None = None
+    """When the therapist shared their notes with the family, if they have."""
+    notes_shared_at: datetime | None = None
+    """Whether any notes exist at all. Only ever set for the session's own
+    therapist: nobody else needs to know a private draft is sitting there."""
+    notes_written: bool | None = None
 
 
 class SessionJoinOut(BaseModel):
@@ -500,6 +510,15 @@ class WorkingHoursOut(WorkingHoursUpdate):
     open_times: int = 0
 
 
+class NotifyPrefs(BaseModel):
+    """What a therapist wants to hear about. Safety alerts are deliberately absent:
+    an alert about a child always reaches their therapist and cannot be turned off."""
+
+    bookings: bool = True
+    sharing: bool = True
+    notes_reminders: bool = True
+
+
 class TherapistMeOut(BaseModel):
     """The signed-in therapist's own profile and hours, in one read."""
 
@@ -514,6 +533,7 @@ class TherapistMeOut(BaseModel):
     about: str
     good_for: list[GoodForItem]
     clinic: ClinicOut | None
+    notify: NotifyPrefs
     hours: WorkingHoursOut
 
 

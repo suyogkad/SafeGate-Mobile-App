@@ -1,12 +1,13 @@
 /**
- * T11a Your profile (from Account). Therapists join by invitation, and details can be missed or change, so the
- * therapist edits what families see: role, years with kids, the line on their card, the headline, "About", "Good fit
- * for" and the clinic. Saved changes show at once on Find a therapist, the profile and Book. No illustration here:
- * the therapist's own photo (families still see initials). Name and email come from the invitation; changing them
- * goes through support.
+ * T11a Your profile (from Account). Therapists join by invitation, and details can be missed or
+ * change, so the therapist edits what families read: their role, years with kids, the line on
+ * their card, the headline, "About", "Good fit for" and the clinic. Saved changes show on the
+ * family's Find a therapist and profile at once, because both read the same record.
+ *
+ * Name and email come from the invitation and are not editable here; changing them goes
+ * through support. Whether each open time can be booked by video or in person is set in My hours.
  */
-import { router, type Href } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Header } from '@/components/Header';
 import { EmojiCircle } from '@/components/NotesParts';
@@ -21,48 +22,65 @@ import { Input } from '@/components/ui/Input';
 import { SwitchRow } from '@/components/ui/Switch';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
-import { PHOTOS } from '@/data/faces';
-import type { Therapist } from '@/data/therapists';
-import { demoOnly } from '@/lib/call';
+import type { ApiGoodFor } from '@/api/therapist';
 import { initialsOf } from '@/lib/time';
-import { useApp, useTherapist, type ProfileEdit } from '@/store/app';
+import { useMe } from '@/lib/therapist';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-const ROLES: Therapist['role'][] = ['Psychologist', 'Occupational therapist', 'Speech pathologist'];
+const ROLES = ['Psychologist', 'Occupational therapist', 'Speech pathologist'] as const;
 const PICTURES = ['🧩', '🌋', '🏫', '🎧', '🗓️', '✋', '💬', '🤝', '🖼️', '🌿'];
 
 type Draft = {
-  role: Therapist['role'];
+  role: string;
   years: string;
   blurb: string;
   tagline: string;
   about: string;
-  goodFor: Therapist['goodFor'];
+  goodFor: ApiGoodFor[];
   inPerson: boolean;
   clinicName: string;
   clinicAddress: string;
 };
 
-const yearsOf = (s: string) => s.match(/\d+/)?.[0] ?? '';
+const EMPTY: Draft = {
+  role: '',
+  years: '',
+  blurb: '',
+  tagline: '',
+  about: '',
+  goodFor: [],
+  inPerson: false,
+  clinicName: '',
+  clinicAddress: '',
+};
 
 export default function YourProfile() {
-  const me = useApp((s) => s.account?.name) ?? null;
   const { c } = useTheme();
-  const t = useTherapist('priya');
-  const [d, setD] = useState<Draft>(() => ({
-    role: t.role,
-    years: yearsOf(t.years),
-    blurb: t.blurb,
-    tagline: t.tagline,
-    about: t.about,
-    goodFor: t.goodFor.map((g) => ({ ...g })),
-    inPerson: !!t.clinic,
-    clinicName: t.clinic?.name ?? '',
-    clinicAddress: t.clinic?.address ?? '',
-  }));
+  const { me, loading, saveDetails } = useMe();
+  const [d, setD] = useState<Draft>(EMPTY);
+  const [started, setStarted] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fill the form once, when the profile arrives. Refilling it later would throw
+  // away whatever the therapist had typed in the meantime.
+  useEffect(() => {
+    if (started || !me) return;
+    setD({
+      role: me.title,
+      years: me.years_with_kids ? String(me.years_with_kids) : '',
+      blurb: me.blurb,
+      tagline: me.tagline,
+      about: me.about,
+      goodFor: me.good_for.map((g) => ({ ...g })),
+      inPerson: !!me.clinic,
+      clinicName: me.clinic?.name ?? '',
+      clinicAddress: me.clinic?.address ?? '',
+    });
+    setStarted(true);
+  }, [me, started]);
 
   const edit = (patch: Partial<Draft>) => {
     setD((x) => ({ ...x, ...patch }));
@@ -70,21 +88,29 @@ export default function YourProfile() {
     setError(null);
   };
 
-  const save = () => {
+  const save = async () => {
     const years = parseInt(d.years, 10);
     if (!d.tagline.trim() || !d.about.trim()) return setError('Add a headline and a few words about you.');
     if (!years || years < 1 || years > 60) return setError('Add how many years you’ve worked with kids.');
-    if (d.inPerson && (!d.clinicName.trim() || !d.clinicAddress.trim())) return setError('Add the clinic’s name and address, or switch in-person off.');
-    const patch: ProfileEdit = {
-      role: d.role,
-      years: `${years} ${years === 1 ? 'YEAR' : 'YEARS'} WITH KIDS`,
-      blurb: d.blurb.trim() || `${d.role} · ${d.inPerson ? `Video or ${d.clinicName.trim()}` : 'Video'}`,
+    if (d.inPerson && (!d.clinicName.trim() || !d.clinicAddress.trim()))
+      return setError('Add the clinic’s name and address, or switch in-person off.');
+
+    setBusy(true);
+    const failed = await saveDetails({
+      title: d.role.trim(),
+      years_with_kids: years,
+      blurb: d.blurb.trim() || `${d.role || 'Therapist'} · ${d.inPerson ? `Video or ${d.clinicName.trim()}` : 'Video'}`,
       tagline: d.tagline.trim(),
       about: d.about.trim(),
-      goodFor: d.goodFor.map((g) => ({ ...g, text: g.text.trim() })).filter((g) => g.text),
-      clinic: d.inPerson ? { name: d.clinicName.trim(), address: d.clinicAddress.trim() } : null,
-    };
-    useApp.getState().updateProfile('priya', patch);
+      good_for: d.goodFor.map((g) => ({ ...g, text: g.text.trim() })).filter((g) => g.text),
+      clinic_name: d.inPerson ? d.clinicName.trim() : null,
+      clinic_address: d.inPerson ? d.clinicAddress.trim() : null,
+    });
+    setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
     setSaved(true);
   };
 
@@ -106,28 +132,21 @@ export default function YourProfile() {
               </T>
             </View>
           ) : null}
-          <Button title="Save changes" icon="check" onPress={save} />
-          <Button
-            title="See it as families do"
-            variant="text"
-            style={{ alignSelf: 'center' }}
-            onPress={() => router.push('/parent/therapist?id=priya&preview=1' as Href)}
-          />
+          <Button title="Save changes" icon="check" disabled={busy || !me} onPress={save} />
         </View>
       }
     >
       <Stagger>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-            <Avatar initials={initialsOf(me)} size={80} />
+            <Avatar initials={initialsOf(me?.full_name)} size={80} />
             <View style={{ flex: 1, gap: 2 }}>
               <T v="heading" header>
-                {me || 'Your name'}
+                {me?.full_name || (loading ? 'Loading…' : 'Your name')}
               </T>
               <T v="bodySm" color="textMuted">
-                {useApp.getState().account?.email || 'Your email'}
+                {me?.email || ''}
               </T>
-              <Button title="Change photo" variant="text" iconLeft="camera" onPress={() => demoOnly('In the real app you could upload a new photo.')} />
             </View>
           </View>
           <T v="bodySm" color="textMuted" style={{ marginTop: space.sm }}>
@@ -146,10 +165,33 @@ export default function YourProfile() {
 
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ gap: space.lg }}>
-            <Input label="Years working with kids" value={d.years} onChangeText={(v) => edit({ years: v.replace(/[^0-9]/g, '').slice(0, 2) })} keyboardType="number-pad" />
-            <Input label="The line on your card" value={d.blurb} onChangeText={(v) => edit({ blurb: v })} placeholder="Psychologist · Autistic kids and teens · Video or Parramatta" />
-            <Input label="Headline" value={d.tagline} onChangeText={(v) => edit({ tagline: v })} placeholder="Calm, practical sessions for kids and their families." />
-            <Input label="About you" area multiline value={d.about} onChangeText={(v) => edit({ about: v })} style={{ minHeight: 100 }} placeholder="Where you work and the ages you work with." />
+            <Input
+              label="Years working with kids"
+              value={d.years}
+              onChangeText={(v) => edit({ years: v.replace(/[^0-9]/g, '').slice(0, 2) })}
+              keyboardType="number-pad"
+            />
+            <Input
+              label="The line on your card"
+              value={d.blurb}
+              onChangeText={(v) => edit({ blurb: v })}
+              placeholder="Psychologist · Autistic kids and teens · Video or Parramatta"
+            />
+            <Input
+              label="Headline"
+              value={d.tagline}
+              onChangeText={(v) => edit({ tagline: v })}
+              placeholder="Calm, practical sessions for kids and their families."
+            />
+            <Input
+              label="About you"
+              area
+              multiline
+              value={d.about}
+              onChangeText={(v) => edit({ about: v })}
+              style={{ minHeight: 100 }}
+              placeholder="Where you work and the ages you work with."
+            />
           </View>
         </Card>
 
@@ -162,17 +204,32 @@ export default function YourProfile() {
                   <Tappable
                     label={`Picture for ${g.text || `item ${i + 1}`}: ${g.emoji}. Change`}
                     visualHeight={48}
-                    onPress={() => edit({ goodFor: d.goodFor.map((x, j) => (j === i ? { ...x, emoji: PICTURES[(PICTURES.indexOf(x.emoji) + 1) % PICTURES.length] } : x)) })}
+                    onPress={() =>
+                      edit({
+                        goodFor: d.goodFor.map((x, j) =>
+                          j === i ? { ...x, emoji: PICTURES[(PICTURES.indexOf(x.emoji) + 1) % PICTURES.length] } : x,
+                        ),
+                      })
+                    }
                   >
                     <EmojiCircle emoji={g.emoji} i={i} />
                   </Tappable>
                   <View style={{ flex: 1 }}>
-                    <Input a11yLabel={`Good fit for, ${i + 1}`} value={g.text} onChangeText={(v) => edit({ goodFor: d.goodFor.map((x, j) => (j === i ? { ...x, text: v } : x)) })} />
+                    <Input
+                      a11yLabel={`Good fit for, ${i + 1}`}
+                      value={g.text}
+                      onChangeText={(v) => edit({ goodFor: d.goodFor.map((x, j) => (j === i ? { ...x, text: v } : x)) })}
+                    />
                   </View>
                 </View>
               ))}
               {d.goodFor.length < 3 ? (
-                <Button title="Add one" variant="text" iconLeft="plus" onPress={() => edit({ goodFor: [...d.goodFor, { emoji: PICTURES[d.goodFor.length], text: '' }] })} />
+                <Button
+                  title="Add one"
+                  variant="text"
+                  iconLeft="plus"
+                  onPress={() => edit({ goodFor: [...d.goodFor, { emoji: PICTURES[d.goodFor.length], text: '' }] })}
+                />
               ) : null}
             </View>
           </Card>
@@ -197,7 +254,9 @@ export default function YourProfile() {
             ) : null}
           </Card>
           <T v="bodySm" color="textMuted">
-            Whether families can book in person or by video on each time is set in My hours.
+            {/* Both halves or neither: an address a family can't find is worse than none. */}
+            Families can only book in person once both the name and the address are here. Which open times are
+            video or in person is set in My hours.
           </T>
         </View>
       </Stagger>

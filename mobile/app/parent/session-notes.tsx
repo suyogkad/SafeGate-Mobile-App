@@ -1,8 +1,13 @@
 /**
- * P14 Session notes. A header card (initials + name + meta), emoji highlight rows, the "What Priya shared"
- * paragraph, raised cards for "Things to try at home", and a sticky action. "Send Priya a note" is a demo alert.
- * The notes are the part the therapist shared (Write notes, rule 21); the therapist's working notes never show here.
- * ?id=<session> (default: the newest shared notes). A session whose notes aren't shared yet says so.
+ * P14 Session notes. A header card (initials + name + meta), emoji highlight rows, the
+ * "What <therapist> shared" paragraph, raised cards for "Things to try at home", and a
+ * sticky action.
+ *
+ * These are the notes the therapist chose to share. They come from the family's own
+ * endpoint, which has no working-notes field at all, so the therapist's private notes
+ * can never appear here (rule 21). A session whose notes aren't shared yet says so --
+ * nothing has gone wrong, the therapist simply hasn't written them.
+ * ?id=<session id> (default: the newest shared notes).
  */
 import { useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
@@ -15,81 +20,100 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { T } from '@/components/ui/T';
-import { ALEX_PAST } from '@/data/practice';
 import { contact } from '@/lib/call';
-import { latestSharedId } from '@/lib/clients';
-import { dayLabel } from '@/lib/schedule';
-import { useApp, useTherapistFirstName, useTherapistFullName, useTherapistInitials } from '@/store/app';
+import { useFamilySessions, useSharedNotes } from '@/lib/family';
+import { dayLabel, localDateIso } from '@/lib/schedule';
+import { firstName, initialsOf } from '@/lib/time';
 import { space } from '@/theme/tokens';
-
-/** Older links used the first demo id for the Tue 6 Oct notes. */
-const ALIASES: Record<string, string> = { sep16: 'oct6', sep4: 'sep24' };
 
 export default function SessionNotes() {
   const params = useLocalSearchParams<{ id?: string }>();
-  const therapistFirst = useTherapistFirstName();
-  const therapistFull = useTherapistFullName();
-  const therapistInitials = useTherapistInitials();
-  const notes = useApp((s) => s.sessionNotes);
-  const id = (params.id && (ALIASES[params.id] ?? params.id)) || latestSharedId(notes) || 'oct6';
-  const session = ALEX_PAST.find((b) => b.id === id) ?? ALEX_PAST[1];
-  const n = notes[id];
-  const shared = !!n?.sharedAt;
+  const sessions = useFamilySessions();
+
+  // Without an id, show the newest notes the therapist has shared.
+  const newestShared = sessions
+    .filter((s) => s.notes_shared_at)
+    .sort((a, b) => b.start_time.localeCompare(a.start_time))[0];
+  const id = params.id || newestShared?.id;
+  const session = sessions.find((s) => s.id === id) ?? newestShared;
+
+  const { notes, loading } = useSharedNotes(id);
+  const therapistFull = notes?.therapist_name ?? session?.therapist_name ?? 'your therapist';
+  const therapistFirst = firstName(therapistFull) || 'your therapist';
+  const shared = !!notes;
 
   return (
     <Screen
       backdrop="brand"
       header={<Header title="Session notes" left="close" getHelp={false} fallback="/parent/sessions" />}
-      footer={<Button title={`Send ${therapistFirst} a note`} variant="outline" iconLeft="send" onPress={() => contact('message', therapistFull)} />}
+      footer={
+        <Button
+          title={`Send ${therapistFirst} a note`}
+          variant="outline"
+          iconLeft="send"
+          onPress={() => contact('message', therapistFull)}
+        />
+      }
     >
       <Appear>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-            <Avatar initials={therapistInitials} size={64} tone="brand" />
+            <Avatar initials={initialsOf(therapistFull)} size={64} tone="brand" />
             <View style={{ flex: 1, gap: space.xs }}>
               <Badge label={shared ? 'NOTES SHARED' : 'NOTES COMING'} tone={shared ? 'success' : 'neutral'} />
               <T v="heading" header>
                 Notes from {therapistFirst}
               </T>
-              <T v="bodySm" color="textMuted">
-                {dayLabel(session.date).replace(/^(\w+) /, '$1, ')} · {session.kind}
-              </T>
+              {session ? (
+                <T v="bodySm" color="textMuted">
+                  {dayLabel(localDateIso(new Date(session.start_time))).replace(/^(\w+) /, '$1, ')} ·{' '}
+                  {session.meeting_kind === 'video' ? 'Video call' : 'In person'}
+                </T>
+              ) : null}
             </View>
           </View>
         </Card>
       </Appear>
 
-      {shared && n ? (
+      {loading ? (
+        <Card tone="raised" r={24} padding={space.xl}>
+          <T v="bodyLg" color="textSecondary">
+            Loading…
+          </T>
+        </Card>
+      ) : notes ? (
         <>
-          {n.highlights.length ? (
+          {notes.highlights.length ? (
             <View style={{ gap: space.md }}>
               <T v="section" header>
                 Highlights
               </T>
-              <Highlights items={n.highlights} />
+              <Highlights items={notes.highlights} />
             </View>
           ) : null}
-          {n.shared ? (
+          {notes.shared ? (
             <View style={{ gap: space.md }}>
               <T v="section" header>
                 What {therapistFirst} shared
               </T>
-              <SharedMessage text={n.shared} />
+              <SharedMessage text={notes.shared} />
             </View>
           ) : null}
-          {n.tryAtHome.length ? (
+          {notes.try_at_home.length ? (
             <View style={{ gap: space.md }}>
               <T v="section" header>
                 Things to try at home
               </T>
-              <TryAtHome items={n.tryAtHome} />
+              <TryAtHome items={notes.try_at_home} />
             </View>
           ) : null}
         </>
       ) : (
         <Card tone="raised" r={24} padding={space.xl}>
           <T v="bodyLg" color="textSecondary">
-            {therapistFirst} will share notes from this session here. You’ll get a notification when they’re ready.
+            {session
+              ? `${therapistFirst} will share notes from this session here. You’ll see them as soon as they do.`
+              : 'Notes from your sessions will show here.'}
           </T>
         </Card>
       )}

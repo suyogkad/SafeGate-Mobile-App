@@ -13,7 +13,16 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AvailabilitySlot, Child, SessionStatus, TherapySession, User, UserRole
+from app.db.models import (
+    AvailabilitySlot,
+    Child,
+    SessionNote,
+    SessionStatus,
+    TherapistProfile,
+    TherapySession,
+    User,
+    UserRole,
+)
 from app.db.session import get_db
 from app.reminders import cancel_session_reminder, schedule_session_reminder
 from app.schemas import (
@@ -31,10 +40,17 @@ router = APIRouter(tags=["sessions"])
 logger = logging.getLogger(__name__)
 
 
-async def _enrich_sessions(db: AsyncSession, sessions: list[TherapySession]) -> list[SessionOut]:
+async def _enrich_sessions(
+    db: AsyncSession, sessions: list[TherapySession], reader: User | None = None
+) -> list[SessionOut]:
     """Attaches child/therapist names -- a therapist or parent has no other
     way to see the other party's name, since user lookup is otherwise
     admin-only.
+
+    Also says where the session's notes are. `notes_shared_at` is for everyone: a
+    family is told when their therapist shares notes, which is the point of
+    sharing them. `notes_written` is only ever set for the session's own
+    therapist, so nobody else learns that private working notes exist.
     """
     child_ids = {s.child_id for s in sessions}
     therapist_ids = {s.therapist_id for s in sessions}
@@ -46,9 +62,29 @@ async def _enrich_sessions(db: AsyncSession, sessions: list[TherapySession]) -> 
     if therapist_ids:
         result = await db.execute(select(User.id, User.full_name).where(User.id.in_(therapist_ids)))
         therapist_names = dict(result.all())
+    notes: dict = {}
+    if sessions:
+        rows = await db.execute(
+            select(SessionNote.session_id, SessionNote.shared_at).where(
+                SessionNote.session_id.in_({s.id for s in sessions})
+            )
+        )
+        notes = dict(rows.all())
+
     return [
         SessionOut.model_validate(s).model_copy(
-            update={"child_name": child_names.get(s.child_id), "therapist_name": therapist_names.get(s.therapist_id)}
+            update={
+                "child_name": child_names.get(s.child_id),
+                "therapist_name": therapist_names.get(s.therapist_id),
+                "notes_shared_at": notes.get(s.id),
+                "notes_written": (
+                    s.id in notes
+                    if reader is not None
+                    and reader.role == UserRole.THERAPIST
+                    and reader.id == s.therapist_id
+                    else None
+                ),
+            }
         )
         for s in sessions
     ]
@@ -141,7 +177,9 @@ async def complete_finished_sessions(db: AsyncSession) -> int:
     return result.rowcount or 0
 
 
-async def _book_slot(db: AsyncSession, child: Child, slot: AvailabilitySlot) -> TherapySession:
+async def _book_slot(
+    db: AsyncSession, child: Child, slot: AvailabilitySlot, meeting_kind: str = "video"
+) -> TherapySession:
     if slot.therapist_id != child.therapist_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -159,6 +197,7 @@ async def _book_slot(db: AsyncSession, child: Child, slot: AvailabilitySlot) -> 
         start_time=slot.start_time,
         end_time=slot.end_time,
         status=SessionStatus.BOOKED,
+        meeting_kind=meeting_kind,
     )
     slot.is_booked = True
     db.add(session_obj)
@@ -168,6 +207,10 @@ async def _book_slot(db: AsyncSession, child: Child, slot: AvailabilitySlot) -> 
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This slot is already booked")
     await db.refresh(session_obj)
+
+    if session_obj.meeting_kind != "video":
+        schedule_session_reminder(session_obj.id, session_obj.start_time)
+        return session_obj
 
     # A video outage must not lose a confirmed booking: the room is recreated on
     # demand when someone actually joins.
@@ -181,6 +224,34 @@ async def _book_slot(db: AsyncSession, child: Child, slot: AvailabilitySlot) -> 
 
     schedule_session_reminder(session_obj.id, session_obj.start_time)
     return session_obj
+
+
+async def _ensure_meeting_kind_offered(db: AsyncSession, therapist_id: uuid.UUID, kind: str) -> None:
+    """A family can only pick a way of meeting the therapist actually offers.
+
+    In person also needs a clinic address: "in person" with nowhere to go is worse
+    than not offering it at all.
+    """
+    profile = (
+        await db.execute(select(TherapistProfile).where(TherapistProfile.user_id == therapist_id))
+    ).scalar_one_or_none()
+    if profile is None:
+        # A therapist who has not set their hours up yet still takes video calls.
+        if kind == "in_person":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This therapist does not see families in person",
+            )
+        return
+    if kind == "video" and not profile.offers_video:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="This therapist does not take video calls"
+        )
+    if kind == "in_person" and not (profile.offers_in_person and profile.clinic_name and profile.clinic_address):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This therapist does not see families in person",
+        )
 
 
 @router.post("/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
@@ -207,7 +278,9 @@ async def book_session(
     if slot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Availability slot not found")
 
-    session_obj = await _book_slot(db, child, slot)
+    await _ensure_meeting_kind_offered(db, slot.therapist_id, payload.meeting_kind)
+
+    session_obj = await _book_slot(db, child, slot, payload.meeting_kind)
     await log_child_access(db, child.id, current_user.id, "book_session")
     return (await _enrich_sessions(db, [session_obj]))[0]
 
@@ -229,18 +302,19 @@ async def list_sessions(
         stmt = select(TherapySession).where(TherapySession.child_id.in_(child_ids))
 
     result = await db.execute(stmt)
-    return await _enrich_sessions(db, list(result.scalars().all()))
+    return await _enrich_sessions(db, list(result.scalars().all()), current_user)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)
 async def get_session(
+    current_user: User = Depends(get_current_user),
     session_obj: TherapySession = Depends(require_session_access("view_session")),
     db: AsyncSession = Depends(get_db),
 ) -> SessionOut:
     # Keep the detail view honest even when it is opened directly.
     if await complete_finished_sessions(db):
         await db.refresh(session_obj)
-    return (await _enrich_sessions(db, [session_obj]))[0]
+    return (await _enrich_sessions(db, [session_obj], current_user))[0]
 
 
 @router.post("/sessions/{session_id}/join", response_model=SessionJoinOut)
@@ -257,6 +331,10 @@ async def join_session(
     """
     if session_obj.status != SessionStatus.BOOKED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This session is not booked")
+    if session_obj.meeting_kind != "video":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="This session is in person, not a video call"
+        )
 
     child_result = await db.execute(select(Child).where(Child.id == session_obj.child_id))
     child = child_result.scalar_one_or_none()

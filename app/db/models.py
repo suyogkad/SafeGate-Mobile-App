@@ -155,6 +155,12 @@ class TherapistProfile(Base):
     booking_window_weeks: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     notice_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
+    # What this therapist wants to hear about. Safety alerts are not here on
+    # purpose: those always reach the child's therapist and cannot be switched off.
+    notify_bookings: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_sharing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_notes_reminders: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -223,6 +229,9 @@ class TherapySession(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[SessionStatus] = mapped_column(default=SessionStatus.BOOKED, nullable=False)
+    # "video" or "in_person": the family chooses when booking, and both sides have
+    # to agree -- a parent travelling to a clinic for a video call is a real failure.
+    meeting_kind: Mapped[str] = mapped_column(String(10), default="video", nullable=False)
     video_room_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -117,3 +117,27 @@ async def test_an_edit_after_sharing_reaches_the_family_when_reshared(client):
 
     body = (await client.get(f"/sessions/{session['id']}/shared-notes", headers=_auth_headers(parent_token))).json()
     assert body["shared"].startswith("Correction")
+
+
+@pytest.mark.asyncio
+async def test_the_session_list_says_where_the_notes_are(client):
+    """The therapist's Sessions list needs to know what still needs writing, and
+    the family's needs to know what they can read -- without either seeing the
+    other's business."""
+    t_token, parent_token, _, session = await _booked(client)
+
+    mine = (await client.get("/sessions", headers=_auth_headers(t_token))).json()[0]
+    assert mine["notes_written"] is False and mine["notes_shared_at"] is None
+
+    await client.put(f"/sessions/{session['id']}/notes", json=DRAFT, headers=_auth_headers(t_token))
+    mine = (await client.get("/sessions", headers=_auth_headers(t_token))).json()[0]
+    assert mine["notes_written"] is True and mine["notes_shared_at"] is None
+
+    # A draft is the therapist's own business: the family is not told one exists.
+    theirs = (await client.get("/sessions", headers=_auth_headers(parent_token))).json()[0]
+    assert theirs["notes_written"] is None and theirs["notes_shared_at"] is None
+
+    await client.post(f"/sessions/{session['id']}/notes/share", headers=_auth_headers(t_token))
+    theirs = (await client.get("/sessions", headers=_auth_headers(parent_token))).json()[0]
+    assert theirs["notes_shared_at"]
+    assert theirs["notes_written"] is None

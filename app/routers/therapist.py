@@ -20,6 +20,7 @@ from app.db.session import get_db
 from app.schemas import (
     ClinicOut,
     GoodForItem,
+    NotifyPrefs,
     TherapistAlertRow,
     TherapistMeOut,
     TherapistProfileUpdate,
@@ -186,6 +187,11 @@ def _me_out(therapist: User, profile: TherapistProfile, hours: WorkingHoursOut) 
         about=profile.bio or "",
         good_for=[GoodForItem(**g) for g in (profile.good_for or [])],
         clinic=_clinic(profile),
+        notify=NotifyPrefs(
+            bookings=profile.notify_bookings,
+            sharing=profile.notify_sharing,
+            notes_reminders=profile.notify_notes_reminders,
+        ),
         hours=hours,
     )
 
@@ -224,6 +230,24 @@ async def update_me(
     both = bool(clinic_name and clinic_address)
     profile.clinic_name = clinic_name if both else None
     profile.clinic_address = clinic_address if both else None
+    await db.commit()
+    await db.refresh(profile)
+    hours = _hours_out(profile, await _open_time_count(db, therapist.id))
+    return _me_out(therapist, profile, hours)
+
+
+@router.put("/notify", response_model=TherapistMeOut)
+async def update_notify(
+    payload: NotifyPrefs,
+    therapist: User = Depends(require_role(UserRole.THERAPIST)),
+    db: AsyncSession = Depends(get_db),
+) -> TherapistMeOut:
+    """What this therapist wants to hear about. Safety alerts are not among these:
+    an alert about one of their clients always reaches them."""
+    profile = await _my_profile(db, therapist)
+    profile.notify_bookings = payload.bookings
+    profile.notify_sharing = payload.sharing
+    profile.notify_notes_reminders = payload.notes_reminders
     await db.commit()
     await db.refresh(profile)
     hours = _hours_out(profile, await _open_time_count(db, therapist.id))

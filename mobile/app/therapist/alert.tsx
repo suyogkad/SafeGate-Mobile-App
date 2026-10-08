@@ -1,12 +1,18 @@
 /**
- * T09 Client alert. The therapist's copy of the parent's Alert, made of the same parts: the title and time, a
- * facts card (Concern: High is allowed here, never in the child app; what happened; what Alex sees now, from the
- * same calmLead() line as the calm screen; what Jordan has done), action rows (Message Jordan, Read the
- * conversation), and the emergency section set apart (Call 000 + "SafeGate is not an emergency service").
- * "I've seen this" is the parent's action; the therapist taps "Noted", which only clears their own list.
- * ?id=calm
+ * T09 Client alert: the therapist's view of one safety alert. The title and time, a facts
+ * card (the level, what happened, what the child sees now, what the parent has done),
+ * what the therapist can do, and the emergency section set apart.
+ *
+ * Three things this screen deliberately does not do:
+ *  - it never shows what the child wrote. The alert says what happened, not what was
+ *    said, and a therapist only reads a conversation if the family shares it (rule 19).
+ *  - "I've seen this" is the parent's action. The therapist taps "Noted", which clears
+ *    their own list and tells nobody -- the child's screen must keep meaning what it says.
+ *  - it never contacts emergency services itself.
+ * ?id=<alert id>
  */
-import { router } from 'expo-router';
+import { router, useLocalSearchParams, type Href } from 'expo-router';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { ActionRow, Fact } from '@/components/AlertParts';
 import { Header } from '@/components/Header';
@@ -18,34 +24,40 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
+import { noteAlert } from '@/api/therapist';
 import { EMERGENCY_NOTE_SHORT, helpline } from '@/data/helplines';
-import { CLIENTS } from '@/data/practice';
 import { callNumber, contact } from '@/lib/call';
-import { calmLead } from '@/lib/calmLead';
-import { isOpenUrgent, useApp, useChildName } from '@/store/app';
+import { useClients, useTherapistAlerts } from '@/lib/clients';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
+const AT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+const SEEN_AT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
 export default function TherapistAlert() {
   const { c } = useTheme();
-  const name = useChildName();
-  const calmMode = useApp((s) => s.calmMode);
-  const calmAt = useApp((s) => s.calmAt);
-  const calmSeenAt = useApp((s) => s.calmSeenAt);
-  const emergency = useApp((s) => s.emergency);
-  const notifications = useApp((s) => s.notifications);
-  const parent = CLIENTS.alex;
-  const mine = notifications.filter((n) => n.audience === 'therapist' && (n.type === 'calm' || n.type === 'emergency'));
-  const open = mine.filter(isOpenUrgent);
+  const params = useLocalSearchParams<{ id?: string }>();
+  const { alerts, reload } = useTherapistAlerts(false);
+  const clients = useClients();
+  const [noting, setNoting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (calmMode === 'off') {
+  const alert = alerts.find((a) => a.id === params.id);
+
+  if (!alert) {
     return (
       <Screen backdrop="brand" header={<Header left="close" getHelp={false} fallback="/therapist/today" />}>
         <Card padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <Icon name="check-circle" size={22} color={c.onSuccessTint} />
-            <T v="bodyLg" color="textSecondary">
-              Nothing needs you right now
+            <T v="bodyLg" color="textSecondary" style={{ flex: 1 }}>
+              {alerts.length === 0 ? 'Nothing needs you right now' : 'This alert is no longer in your list.'}
             </T>
           </View>
         </Card>
@@ -53,12 +65,30 @@ export default function TherapistAlert() {
     );
   }
 
-  const jordanDid = emergency
-    ? `${emergency.by} asked emergency services to help ${name} at ${emergency.at}.`
-    : calmSeenAt
-      ? `${parent.parentFirst} saw this at ${calmSeenAt} and will reach out to ${name}.`
-      : `Not seen yet. ${parent.parentFirst} has been told.`;
+  const name = alert.child_name ?? 'This child';
+  const client = clients.find((cl) => cl.id === alert.child_id);
+  const parentName = client?.parent || null;
+  const parentFirst = client?.parentFirst || 'The family';
+  const urgent = alert.level === 'urgent';
   const n000 = helpline('000');
+
+  const parentDid = alert.parent_seen_at
+    ? `${parentFirst} saw this at ${SEEN_AT.format(new Date(alert.parent_seen_at))} and will reach out to ${name}.`
+    : urgent
+      ? `Not seen yet. ${parentFirst} has been told.`
+      : `${parentFirst} is not told about this level. It came to you.`;
+
+  const note = async () => {
+    setNoting(true);
+    try {
+      await noteAlert(alert.id);
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not mark this as noted.');
+    } finally {
+      setNoting(false);
+    }
+  };
 
   return (
     <Screen header={<Header left="close" getHelp={false} fallback="/therapist/today" />}>
@@ -67,44 +97,64 @@ export default function TherapistAlert() {
           {name}’s app switched to calm steps
         </T>
         <T v="bodyLg" color="textMuted">
-          Today, {calmAt ?? ''}
+          {AT.format(new Date(alert.timestamp))}
         </T>
       </View>
 
       <Card tone="outlined" padding={space.lg} style={{ paddingVertical: space.xs }}>
         <Fact label="Concern">
-          <Badge label="High" tone="warn" />
+          {/* The level is for adults only: the child's app never shows it (rule 5). */}
+          <Badge label={urgent ? 'High' : 'Medium'} tone={urgent ? 'warn' : 'neutral'} />
         </Fact>
-        <Fact label="What happened">{`${name} wrote something that may mean they are not safe.`}</Fact>
-        <Fact label={`What ${name} sees now`}>{`Calm steps and phone numbers for help, with: “${calmLead(calmMode, emergency)}”`}</Fact>
-        <Fact label={`What ${parent.parentFirst} has done`} last>
-          {jordanDid}
+        <Fact label="What happened">
+          {urgent
+            ? `${name} wrote something that may mean they are not safe.`
+            : `${name} wrote something that may mean they are struggling.`}
+        </Fact>
+        <Fact label={`What ${name} sees now`}>
+          Calm steps and phone numbers for help, and that a grown-up who looks after them has been told.
+        </Fact>
+        <Fact label={`What ${parentFirst} has done`} last>
+          {parentDid}
         </Fact>
       </Card>
 
       <View style={{ gap: space.xs }}>
         <SectionHeader title="What you can do now" />
-        <ActionRow icon="send" title={`Message ${parent.parentFirst}`} sub={parent.parent} action="Message" label={`Message ${parent.parent}`} onPress={() => contact('message', parent.parent)} />
-        <Divider />
+        {parentName ? (
+          <>
+            <ActionRow
+              icon="send"
+              title={`Message ${parentFirst}`}
+              sub={parentName}
+              action="Message"
+              label={`Message ${parentName}`}
+              onPress={() => contact('message', parentName)}
+            />
+            <Divider />
+          </>
+        ) : null}
         <ActionRow
-          icon="message-square"
-          title="Read the conversation"
-          sub={`As ${parent.parentFirst} sees it`}
-          action="Read"
-          label="Read the conversation"
-          onPress={() => router.push('/parent/transcript?id=live')}
+          icon="user"
+          title={`Open ${name}’s page`}
+          sub="Goals, sessions and what the family shared"
+          action="Open"
+          label={`Open ${name}'s page`}
+          onPress={() => router.push(`/therapist/client?id=${alert.child_id}` as Href)}
         />
+        <Divider />
+        {/* The therapist does not get the child's words. The family reads the chat,
+            and shares one if they choose to (rule 19). */}
+        <View style={{ flexDirection: 'row', gap: space.sm, paddingVertical: space.md }}>
+          <Icon name="lock" size={18} color={c.textMuted} />
+          <T v="bodySm" color="textSecondary" style={{ flex: 1 }}>
+            You don’t see what {name} wrote. {parentFirst} reads the chat, and can share one with you.
+          </T>
+        </View>
       </View>
 
       <View style={{ gap: space.sm }}>
-        {open.length ? (
-          <>
-            <Button title="Noted" icon="check" onPress={() => open.forEach((n) => useApp.getState().resolveNotification(n.id))} />
-            <T v="bodySm" color="textMuted">
-              Only for your list. {parent.parentFirst} and {name} aren’t told.
-            </T>
-          </>
-        ) : (
+        {alert.noted_at ? (
           <Appear>
             <Card tone="surface" padding={space.lg}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }} accessibilityLiveRegion="polite">
@@ -115,10 +165,18 @@ export default function TherapistAlert() {
               </View>
             </Card>
           </Appear>
+        ) : (
+          <>
+            <Button title="Noted" icon="check" disabled={noting} onPress={note} />
+            <T v="bodySm" color="textMuted" accessibilityLiveRegion="polite">
+              {error ?? `Only for your list. ${parentFirst} and ${name} aren’t told.`}
+            </T>
+          </>
         )}
       </View>
 
-      {/* Set apart: emergency. The therapist can call 000 too; contacting emergency services for the family is the parent's step. */}
+      {/* Set apart: emergency. The therapist can call 000 too; contacting emergency
+          services for the family is the parent's step, and SafeGate never calls. */}
       <Card tone="help" padding={space.lg} style={{ marginTop: space.lg }}>
         <View style={{ gap: space.md }}>
           <T v="heading" tint={c.onHelpTint}>

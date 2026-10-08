@@ -1,21 +1,21 @@
 /**
- * T01 Therapist Today (tab root). Built like parent Home: the hero is the therapist's own photo under a navy overlay
- * (bell with the unread count + "PS" avatar;
- * the pill button opens My hours), "Needs attention" (calm-step alerts, notes to write, a family sharing their
- * week), today's sessions, "Coming up" as the Sessions cards, open times this week as chips, and quick-action tiles.
- * Every side shares one demo day (Sunday 11 October), so Today says there are no sessions and Coming up leads.
- * Alex's booking comes from the shared store, so a parent's booking shows up here live.
+ * T01 Therapist Today (tab root). Built like parent Home: a navy hero (a bell with
+ * what needs the therapist + their initials; the pill button opens My hours), then
+ * "Needs attention" (safety alerts about their own clients), today's sessions,
+ * "Coming up", this week's open times as chips, and quick-action tiles.
+ *
+ * Everything here is this therapist's real data. A section with nothing in it says
+ * so, rather than filling in with something invented.
  */
 import { router, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, type ImageSourcePropType } from 'react-native';
+import { View } from 'react-native';
 import { HeroBand } from '@/components/HeroBand';
 import { QuickTile, TileGrid } from '@/components/QuickTile';
 import { Screen } from '@/components/Screen';
 import { SessionCard, withComma } from '@/components/SessionCard';
 import { Appear } from '@/components/ui/Appear';
-import { Badge } from '@/components/ui/Badge';
-import { Avatar, FaceCircle, SectionHeader } from '@/components/ui/bits';
+import { Avatar, SectionHeader } from '@/components/ui/bits';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip, ChipRow } from '@/components/ui/Chip';
@@ -23,66 +23,29 @@ import { CountBadge } from '@/components/ui/CountBadge';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
-import { PHOTOS } from '@/data/faces';
-import { NOTIFICATION_LOOK, type Notification } from '@/data/notifications';
-import { CLIENTS } from '@/data/practice';
 import { dayLabel, dayShort, localDateIso, localStartMinutes, timeLabel } from '@/lib/schedule';
 import { useClients, useMyOpenTimes, useTherapistAlerts, useTherapistSessions } from '@/lib/clients';
 import { noteAlert } from '@/api/therapist';
 import { firstName, greeting, initialsOf, longDate, partOfDay } from '@/lib/time';
-import { isOpenUrgent, useApp, useBookings, useChildName, useUnreadCount } from '@/store/app';
+import { useApp } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-/** The parent Home "Needs you" card. Every title already names the child ("Write notes for Alex"). */
-function NeedsCard({ n }: { n: Notification }) {
-  const { c } = useTheme();
-  const look = NOTIFICATION_LOOK[n.type];
-  // the child's own character (how the child is recognised everywhere), not decorative art
-  const client = CLIENTS[n.childId as keyof typeof CLIENTS];
-  const picture: { face?: ImageSourcePropType; tint?: string } = n.urgent ? {} : { face: client?.face ?? look.face, tint: client?.tint ?? look.tint };
-  const open = () => {
-    useApp.getState().markRead(n.id);
-    router.push(n.href as Href);
-  };
-  return (
-    <Card tone="outlined" padding={space.lg} onPress={open} label={`${n.title}. ${n.detail}. ${look.tag}. ${n.opens}`}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        {picture.face ? (
-          <FaceCircle face={picture.face} tint={picture.tint} size={48} />
-        ) : (
-          <View style={{ width: 48, height: 48, borderRadius: radius.pill, backgroundColor: c.warnTint, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="bell" size={22} color={c.onWarnTint} />
-          </View>
-        )}
-        <View style={{ flex: 1, gap: space.xs }}>
-          <T v="section">{n.title}</T>
-          <T v="bodySm" color="textMuted">
-            {n.detail}
-          </T>
-          <Badge label={look.tag} tone={look.tone} />
-        </View>
-        <Icon name="chevron-right" size={20} color={c.textMuted} />
-      </View>
-    </Card>
-  );
-}
+const ALERT_AT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 
 export default function TherapistToday() {
   const { c } = useTheme();
-  const name = useChildName();
-  const unread = useUnreadCount('therapist');
-  const notifications = useApp((s) => s.notifications);
 
-  // Urgent alerts first, then the rest newest first.
-  // Real safety alerts about this therapist's own clients, newest first.
+  // Real safety alerts about this therapist's own clients, urgent first.
   const { alerts, reload: reloadAlerts } = useTherapistAlerts(true);
   const needs = [...alerts].sort((a, b) => Number(b.level === 'urgent') - Number(a.level === 'urgent'));
 
-  // From Priya's calendar (her hours + bookings), so a parent's booking or a change in My hours shows up here live.
-  const bookings = useBookings();
-  const availability = useApp((s) => s.availability);
-  // The therapist's real upcoming sessions, soonest first.
   const me = useApp((s) => s.account?.name) ?? null;
   const sessions = useTherapistSessions();
   const clients = useClients();
@@ -105,6 +68,12 @@ export default function TherapistToday() {
   const todaySessions = sessions.filter(
     (x) => x.status === 'booked' && new Date(x.start_time).toDateString() === todayIso,
   );
+  // Past sessions with nothing written yet: the other thing that actually needs
+  // the therapist, and what the bell counts alongside alerts.
+  const notesDue = sessions.filter(
+    (s) => s.status === 'completed' && s.notes_written === false,
+  ).length;
+  const unread = needs.length + notesDue;
 
   const actions: { title: string; icon: IconName; href: Href }[] = [
     { title: 'Set my hours', icon: 'clock', href: '/therapist/availability' },
@@ -120,7 +89,7 @@ export default function TherapistToday() {
         topRight={
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Tappable
-              label={`Notifications, ${unread ? `${unread} new` : 'none new'}`}
+              label={`Notifications, ${unread ? `${unread} needing you` : 'nothing needing you'}`}
               onPress={() => router.push('/therapist/notifications')}
               visualHeight={44}
             >
@@ -161,7 +130,7 @@ export default function TherapistToday() {
                       </T>
                     </View>
                     <T v="bodySm" color="textMuted">
-                      {new Date(a.timestamp).toLocaleString()} ·{' '}
+                      {ALERT_AT.format(new Date(a.timestamp))} ·{' '}
                       {a.parent_seen_at ? 'The family has seen this' : 'Not seen by the family yet'}
                     </T>
                     <Button
@@ -214,7 +183,7 @@ export default function TherapistToday() {
                   date={localDateIso(at)}
                   start={localStartMinutes(at)}
                   initials={(x.child_name ?? '?').charAt(0)}
-                  tag={x.video_room_url ? 'VIDEO CALL' : 'SESSION'}
+                  tag={x.meeting_kind === 'video' ? 'VIDEO CALL' : 'IN PERSON'}
                   line={x.child_name ?? 'Client'}
                   label={`Today, ${timeLabel(at.getHours() * 60 + at.getMinutes())}. ${x.child_name ?? 'Client'}. Open the session`}
                   onPress={() => router.push(`/therapist/session?id=${x.id}` as Href)}
@@ -237,7 +206,7 @@ export default function TherapistToday() {
             const start = localStartMinutes(at);
             const who = s.child_name ?? 'Client';
             const parent = clients.find((c) => c.id === s.child_id)?.parent;
-            const kind = s.video_room_url ? 'Video call' : 'Session';
+            const kind = s.meeting_kind === 'video' ? 'Video call' : 'In person';
             return (
               <Appear key={s.id} delay={i * 60}>
                 <SessionCard
@@ -271,7 +240,7 @@ export default function TherapistToday() {
                   key={o.id}
                   label={`${dayShort(date).split(' ')[0]} ${timeLabel(start)}`}
                   a11yLabel={`Open time, ${dayLabel(date)}, ${timeLabel(start)}. Change or remove`}
-                  onPress={() => router.push(`/therapist/slot?date=${date}&start=${start}` as Href)}
+                  onPress={() => router.push(`/therapist/slot?slot=${o.id}` as Href)}
                 />
               );
             })}

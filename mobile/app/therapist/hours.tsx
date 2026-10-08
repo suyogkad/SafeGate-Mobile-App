@@ -1,7 +1,10 @@
 /**
- * Day hours (from My hours): pick when a working day starts and ends, by tapping times ("From", then "Until"),
- * never typing. The sticky bar says what families will get ("3 sessions of 50 min") before saving, as Book's bar
- * says what will be booked. ?day=fri adds hours (turning the day on); &i=0 changes or removes a range.
+ * Day hours (from My hours): pick when a working day starts and ends, by tapping times
+ * ("From", then "Until"), never typing. The sticky bar says what families will get
+ * ("3 sessions of 50 min") before saving.
+ *
+ * ?day=fri adds hours (turning the day on); &i=0 changes or removes a range. Saving
+ * writes the whole weekly template back, which rebuilds the open times families see.
  */
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -15,61 +18,103 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
+import type { ApiTimeRange } from '@/api/therapist';
 import { WEEKDAYS, type Weekday } from '@/data/practice';
 import { rangeLabel } from '@/lib/schedule';
-import { useApp } from '@/store/app';
+import { useMe } from '@/lib/therapist';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
+
+const BACK = '/therapist/availability';
 
 export default function DayHours() {
   const { c } = useTheme();
   const params = useLocalSearchParams<{ day?: string; i?: string }>();
+  const { me, loading, saveWorkingHours } = useMe();
+
   const day = (WEEKDAYS.find((d) => d.id === params.day) ?? WEEKDAYS[4]).id as Weekday;
   const label = WEEKDAYS.find((d) => d.id === day)!.label;
-  const a = useApp((s) => s.availability);
-  const ranges = a.weekly[day];
+
+  const ranges: ApiTimeRange[] = me?.hours.weekly[day] ?? [];
   const index = params.i !== undefined && ranges[Number(params.i)] ? Number(params.i) : null;
   const current = index !== null ? ranges[index] : null;
 
-  const [from, setFrom] = useState<number>(current?.start ?? 540);
-  const [until, setUntil] = useState<number>(current?.end ?? 720);
+  // Chosen before the hours arrive, then the defaults below take over if untouched.
+  const [from, setFrom] = useState<number | null>(null);
+  const [until, setUntil] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const start = from ?? current?.start ?? 540;
+  const end = until ?? current?.end ?? 720;
+
+  if (!me) {
+    return (
+      <Screen backdrop="brand" header={<Header title={`${label} hours`} left="close" getHelp={false} fallback={BACK} />}>
+        <Card tone="raised" padding={space.lg}>
+          <T v="bodyLg" color="textSecondary">
+            {loading ? 'Loading…' : 'Your hours aren’t available right now.'}
+          </T>
+        </Card>
+      </Screen>
+    );
+  }
+
+  const h = me.hours;
   const others = ranges.filter((_, j) => j !== index);
-  const clash = others.find((r) => from < r.end && r.start < until);
-  const fits = until > from ? Math.floor((until - from + a.gapMin) / (a.lengthMin + a.gapMin)) : 0;
-  const ok = until > from && !clash && fits > 0;
+  const clash = others.find((r) => start < r.end && r.start < end);
+  const fits = end > start ? Math.floor((end - start + h.gap_min) / (h.session_length_min + h.gap_min)) : 0;
+  const ok = end > start && !clash && fits > 0;
 
-  const leave = () => goBack('/therapist/availability');
-  const save = () => {
-    useApp.getState().setDayHours(day, [...others, { start: from, end: until }]);
-    leave();
+  const write = async (next: ApiTimeRange[]) => {
+    setBusy(true);
+    const failed = await saveWorkingHours({
+      weekly: { ...h.weekly, [day]: [...next].sort((a, b) => a.start - b.start) },
+      session_length_min: h.session_length_min,
+      gap_min: h.gap_min,
+      offers_video: h.offers_video,
+      offers_in_person: h.offers_in_person,
+      booking_window_weeks: h.booking_window_weeks,
+      notice_days: h.notice_days,
+      timezone: h.timezone,
+    });
+    setBusy(false);
+    if (failed) {
+      setError(failed);
+      return;
+    }
+    goBack(BACK);
   };
 
   return (
     <Screen
       backdrop="brand"
-      header={<Header title={`${label} hours`} left="close" getHelp={false} fallback="/therapist/availability" />}
+      header={<Header title={`${label} hours`} left="close" getHelp={false} fallback={BACK} />}
       footer={
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <Icon name="calendar" size={16} color={c.textMuted} />
             <T v="bodySm" color="textSecondary" style={{ flex: 1 }} accessibilityLiveRegion="polite">
-              {until > from
-                ? `${label}, ${rangeLabel(from, until)} · ${fits === 1 ? '1 session' : `${fits} sessions`} of ${a.lengthMin} min`
-                : 'Pick an end time after the start'}
+              {error ??
+                (end > start
+                  ? `${label}, ${rangeLabel(start, end)} · ${fits === 1 ? '1 session' : `${fits} sessions`} of ${h.session_length_min} min`
+                  : 'Pick an end time after the start')}
             </T>
           </View>
-          <Button title={current ? 'Save these hours' : `Add ${label} hours`} icon="check" disabled={!ok} onPress={save} />
+          <Button
+            title={current ? 'Save these hours' : `Add ${label} hours`}
+            icon="check"
+            disabled={!ok || busy}
+            onPress={() => write([...others, { start, end }])}
+          />
           {current ? (
             <Button
               title="Remove these hours"
               variant="text"
               iconLeft="trash-2"
               style={{ alignSelf: 'center' }}
-              onPress={() => {
-                useApp.getState().setDayHours(day, others);
-                leave();
-              }}
+              disabled={busy}
+              onPress={() => write(others)}
             />
           ) : null}
         </View>
@@ -79,14 +124,18 @@ export default function DayHours() {
         <T v="bodyLg">When can families book you on {label}s?</T>
         <View style={{ gap: space.md }}>
           <SectionHeader title="From" />
-          <TimeChooser label="From" value={from} onChange={(t) => {
-            setFrom(t);
-            if (until <= t) setUntil(Math.min(t + 180, 1200));
-          }} />
+          <TimeChooser
+            label="From"
+            value={start}
+            onChange={(t) => {
+              setFrom(t);
+              if (end <= t) setUntil(Math.min(t + 180, 1200));
+            }}
+          />
         </View>
         <View style={{ gap: space.md }}>
           <SectionHeader title="Until" />
-          <TimeChooser label="Until" value={until} after={from} onChange={setUntil} />
+          <TimeChooser label="Until" value={end} after={start} onChange={setUntil} />
         </View>
         {clash ? (
           <Card tone="help" padding={space.lg}>
@@ -95,10 +144,10 @@ export default function DayHours() {
             </T>
           </Card>
         ) : null}
-        {until > from && fits === 0 ? (
+        {end > start && fits === 0 ? (
           <Card tone="help" padding={space.lg}>
             <T v="bodySm" color="onHelpTint">
-              That’s shorter than one {a.lengthMin}-minute session.
+              That’s shorter than one {h.session_length_min}-minute session.
             </T>
           </Card>
         ) : null}

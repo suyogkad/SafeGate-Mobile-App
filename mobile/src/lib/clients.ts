@@ -8,6 +8,7 @@ import {
   type ApiSlot,
   type ApiTherapistAlert,
 } from '../api/therapist';
+import type { ApiChild } from '../api/children';
 import { ALEX_PAST, type SessionNotes } from '../data/practice';
 import type { Notification } from '../data/notifications';
 import { isOpenUrgent, useApp } from '../store/app';
@@ -29,9 +30,12 @@ export const needsAttention = (n: Notification) =>
 export type ClientSummary = {
   id: string;
   name: string;
+  /** "9 years old", or empty when no date of birth was recorded. */
   age: string;
   parent: string;
   parentFirst: string;
+  /** The child's own record, for the details only their therapist needs. */
+  record: ApiChild;
   /** "Thu 15 Oct · 4:00 pm" */
   next: string | null;
   /** Only once the family shares it; null until then (HANDOFF rule 19). */
@@ -39,6 +43,22 @@ export type ClientSummary = {
   sharedThisWeek: boolean;
   needsAttention: boolean;
 };
+
+/** "9 years old". Empty when no date of birth was recorded: a guessed age in a
+ * clinical record reads like a fact (the same reason missing fields say "Not
+ * recorded" rather than carrying a placeholder). */
+export function ageOf(dateOfBirth: string | null): string {
+  if (!dateOfBirth) return '';
+  const born = new Date(dateOfBirth);
+  if (Number.isNaN(born.getTime())) return '';
+  const now = new Date();
+  let years = now.getFullYear() - born.getFullYear();
+  const beforeBirthday =
+    now.getMonth() < born.getMonth() || (now.getMonth() === born.getMonth() && now.getDate() < born.getDate());
+  if (beforeBirthday) years -= 1;
+  if (years < 0 || years > 25) return '';
+  return `${years} ${years === 1 ? 'year' : 'years'} old`;
+}
 
 const WHEN = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 const AT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -71,9 +91,11 @@ export function useTherapistSessions(): ApiSession[] {
 }
 
 export function useClients(): ClientSummary[] {
-  const notifications = useApp((s) => s.notifications);
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const sessions = useTherapistSessions();
+  // A client "needs attention" when they have a real alert this therapist has
+  // not noted yet -- the same list Today shows.
+  const { alerts } = useTherapistAlerts(true);
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +110,8 @@ export function useClients(): ClientSummary[] {
               return {
                 id: c.id,
                 name: c.full_name,
-                age: '',
+                age: ageOf(c.date_of_birth),
+                record: c,
                 parent,
                 parentFirst: parent.split(' ')[0] ?? '',
                 next: null,
@@ -111,7 +134,7 @@ export function useClients(): ClientSummary[] {
   return clients.map((c) => ({
     ...c,
     next: nextSessionLabel(sessions, c.id),
-    needsAttention: notifications.some((n) => n.childId === c.id && needsAttention(n)),
+    needsAttention: alerts.some((a) => a.child_id === c.id),
   }));
 }
 
@@ -154,4 +177,19 @@ export function useMyOpenTimes(therapistId: string | null | undefined) {
     };
   }, [therapistId]);
   return slots;
+}
+
+/** The same open times, with a way to reload after adding or removing one. */
+export function useMyOpenTimesLive(therapistId: string | null | undefined) {
+  const [slots, setSlots] = useState<ApiSlot[]>([]);
+  const reload = useCallback(() => {
+    if (!therapistId) return;
+    listMyOpenTimes(therapistId)
+      .then((s) => setSlots(s.filter((x) => !x.is_booked)))
+      .catch(() => {
+        /* offline: the screen shows its empty state */
+      });
+  }, [therapistId]);
+  useEffect(reload, [reload]);
+  return { slots, reload };
 }

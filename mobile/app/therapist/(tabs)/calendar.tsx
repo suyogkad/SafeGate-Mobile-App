@@ -32,6 +32,7 @@ import {
 } from "@/lib/schedule";
 import { useApp, useChildName } from "@/store/app";
 import { useMyOpenTimes, useTherapistSessions } from "@/lib/clients";
+import { useMe } from "@/lib/therapist";
 import { radius, space } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
@@ -60,13 +61,16 @@ export default function Calendar() {
   const therapistId = useApp((s) => s.account?.id) ?? null;
   const slots = useMyOpenTimes(therapistId);
   const sessions = useTherapistSessions();
+  // Time off is what makes a quiet day read "Away" rather than "Off".
+  const { me } = useMe();
+  const timeOff = me?.hours.time_off ?? [];
   const [view, setView] = useState<(typeof VIEWS)[number]>("Week");
   const [monday, setMonday] = useState(THIS_WEEK);
   const [day, setDay] = useState(THIS_WEEK);
 
   const days = weekDays(monday);
   const blocks: Record<string, Block[]> = Object.fromEntries(
-    days.map((d) => [d, realBlocksForDay(slots, sessions, d)]),
+    days.map((d) => [d, realBlocksForDay(slots, sessions, d, timeOff)]),
   );
   const all = days.flatMap((d) => blocks[d]);
   const booked = all.filter((b) => b.type === "booked").length;
@@ -93,7 +97,7 @@ export default function Calendar() {
       router.push(`/therapist/session?id=${b.booking.id}` as Href);
     else if (b.type === "open")
       router.push(
-        `/therapist/slot?date=${b.date}&start=${b.start}${b.extraId ? `&extra=${b.extraId}` : ""}` as Href,
+        `/therapist/slot?slot=${b.slotId ?? ""}` as Href,
       );
   };
 

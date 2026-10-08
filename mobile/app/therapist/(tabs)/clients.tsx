@@ -19,9 +19,8 @@ import { Input } from '@/components/ui/Input';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { clientArt, CLIENTS } from '@/data/practice';
-import { useClients, type ClientSummary } from '@/lib/clients';
-import { addDays, DEMO_TODAY, weekStart } from '@/lib/schedule';
-import { useBookings } from '@/store/app';
+import { useClients, useTherapistSessions, type ClientSummary } from '@/lib/clients';
+import { addDays, localDateIso, todayIso, weekStart } from '@/lib/schedule';
 import { gutter, radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -88,12 +87,19 @@ function ClientCard({ cl }: { cl: ClientSummary }) {
 export default function Clients() {
   const { c } = useTheme();
   const clients = useClients();
-  const bookings = useBookings();
+  const sessions = useTherapistSessions();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
   const [query, setQuery] = useState('');
 
-  const monday = weekStart(addDays(DEMO_TODAY, 1));
-  const thisWeek = (id: string) => bookings.some((b) => b.clientId === id && b.date >= monday && b.date <= addDays(monday, 6));
+  // Monday to Sunday of this week, from the therapist's real sessions.
+  const monday = weekStart(todayIso());
+  const sunday = addDays(monday, 6);
+  const thisWeek = (id: string) =>
+    sessions.some((s) => {
+      if (s.child_id !== id || s.status === 'cancelled') return false;
+      const d = localDateIso(new Date(s.start_time));
+      return d >= monday && d <= sunday;
+    });
   const q = query.trim().toLowerCase();
   const list = clients
     .filter((cl) => !q || cl.name.toLowerCase().includes(q) || cl.parent.toLowerCase().includes(q))
