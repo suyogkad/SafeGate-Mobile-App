@@ -252,3 +252,71 @@ async def test_assigned_therapist_can_view_session_but_not_cancel(client):
 
     cancel_resp = await client.post(f"/sessions/{session_id}/cancel", headers=_auth_headers(therapist_token))
     assert cancel_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_has_ended_is_marked_completed(client, db_session):
+    """A booking whose end time has passed is finished. Leaving it "booked" makes a
+    session from a fortnight ago still look upcoming, and still offer to cancel
+    something that already happened."""
+    from sqlalchemy import select, update
+
+    from app.db.models import SessionStatus, TherapySession
+
+    therapist_token, therapist = await _make_therapist(client)
+    parent_token, child = await _make_parent_with_child(client, therapist_id=therapist["id"])
+    slot = await _create_slot(client, therapist_token)
+    booked = (
+        await client.post(
+            "/sessions",
+            json={"child_id": child["id"], "availability_slot_id": slot["id"]},
+            headers=_auth_headers(parent_token),
+        )
+    ).json()
+    assert booked["status"] == "booked"
+
+    # Move it into the past without touching its status.
+    past = datetime.now(timezone.utc) - timedelta(days=14)
+    await db_session.execute(
+        update(TherapySession)
+        .where(TherapySession.id == uuid.UUID(booked["id"]))
+        .values(start_time=past, end_time=past + timedelta(hours=1))
+    )
+    await db_session.commit()
+
+    listed = (await client.get("/sessions", headers=_auth_headers(parent_token))).json()
+    assert next(s for s in listed if s["id"] == booked["id"])["status"] == "completed"
+
+    # And it can no longer be cancelled, because it is no longer booked.
+    cancelled = await client.post(f"/sessions/{booked['id']}/cancel", headers=_auth_headers(parent_token))
+    assert cancelled.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_a_session_still_running_stays_booked(client, db_session):
+    """Started but not finished is still a booking: the join link must keep working."""
+    from sqlalchemy import update
+
+    from app.db.models import TherapySession
+
+    therapist_token, therapist = await _make_therapist(client)
+    parent_token, child = await _make_parent_with_child(client, therapist_id=therapist["id"])
+    slot = await _create_slot(client, therapist_token)
+    booked = (
+        await client.post(
+            "/sessions",
+            json={"child_id": child["id"], "availability_slot_id": slot["id"]},
+            headers=_auth_headers(parent_token),
+        )
+    ).json()
+
+    now = datetime.now(timezone.utc)
+    await db_session.execute(
+        update(TherapySession)
+        .where(TherapySession.id == uuid.UUID(booked["id"]))
+        .values(start_time=now - timedelta(minutes=10), end_time=now + timedelta(minutes=40))
+    )
+    await db_session.commit()
+
+    listed = (await client.get("/sessions", headers=_auth_headers(parent_token))).json()
+    assert next(s for s in listed if s["id"] == booked["id"])["status"] == "booked"

@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,6 +116,31 @@ async def delete_availability_slot(
         )
 
 
+async def complete_finished_sessions(db: AsyncSession) -> int:
+    """Mark sessions that have already ended as completed.
+
+    A booking whose end time has passed is finished, whether or not anyone opened
+    the app afterwards. Leaving it "booked" makes a session from a fortnight ago
+    still look upcoming, and still offer a Cancel button for something that has
+    already happened.
+
+    Done on read rather than on a timer: the scheduler's job store is in memory and
+    does not survive a restart, so a swept-on-a-timer approach would silently miss
+    sessions. This is idempotent and costs an UPDATE that usually matches nothing.
+    """
+    result = await db.execute(
+        update(TherapySession)
+        .where(
+            TherapySession.status == SessionStatus.BOOKED,
+            TherapySession.end_time < datetime.now(timezone.utc),
+        )
+        .values(status=SessionStatus.COMPLETED)
+    )
+    if result.rowcount:
+        await db.commit()
+    return result.rowcount or 0
+
+
 async def _book_slot(db: AsyncSession, child: Child, slot: AvailabilitySlot) -> TherapySession:
     if slot.therapist_id != child.therapist_id:
         raise HTTPException(
@@ -192,6 +217,8 @@ async def list_sessions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionOut]:
+    await complete_finished_sessions(db)
+
     if current_user.role == UserRole.ADMIN:
         stmt = select(TherapySession)
     elif current_user.role == UserRole.THERAPIST:
@@ -210,6 +237,9 @@ async def get_session(
     session_obj: TherapySession = Depends(require_session_access("view_session")),
     db: AsyncSession = Depends(get_db),
 ) -> SessionOut:
+    # Keep the detail view honest even when it is opened directly.
+    if await complete_finished_sessions(db):
+        await db.refresh(session_obj)
     return (await _enrich_sessions(db, [session_obj]))[0]
 
 
