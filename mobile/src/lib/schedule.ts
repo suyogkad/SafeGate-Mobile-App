@@ -167,3 +167,57 @@ export function nextFree(a: Availability, bookings: Booking[]) {
 /** Times a therapist can pick (never typed): every half hour from 7:00 am to 8:00 pm. */
 export const PICKABLE_TIMES = Array.from({ length: 27 }, (_, i) => 420 + i * 30);
 export const partOfDay = (min: number) => (min < 720 ? 'Morning' : min < 1020 ? 'Afternoon' : 'Evening');
+
+
+/** One day on the calendar, built from the backend rather than from demo hours.
+ *
+ * Produces the same Block shape the calendar already renders, so a real slot and a
+ * real session draw exactly like the demo ones did. A day with nothing in it is
+ * "off" -- there are no weekly working hours on the server yet, so the app cannot
+ * tell "not working" from "working but nothing booked". */
+export function realBlocksForDay(
+  slots: { id: string; start_time: string; end_time: string; is_booked: boolean }[],
+  sessions: { id: string; start_time: string; end_time: string; status: string; child_id: string; child_name: string | null; video_room_url: string | null }[],
+  date: string,
+): Block[] {
+  const out: Block[] = [];
+
+  for (const s of sessions) {
+    if (s.status !== 'booked' && s.status !== 'completed') continue;
+    const at = new Date(s.start_time);
+    if (localDateIso(at) !== date) continue;
+    const start = localStartMinutes(at);
+    const end = localStartMinutes(new Date(s.end_time));
+    out.push({
+      type: 'booked',
+      date,
+      start,
+      end,
+      booking: {
+        id: s.id,
+        clientId: s.child_id,
+        date,
+        start,
+        lengthMin: Math.max(1, end - start),
+        kind: s.video_room_url ? 'Video call' : 'In person',
+        clientName: s.child_name ?? 'Client',
+      },
+    });
+  }
+
+  for (const o of slots) {
+    if (o.is_booked) continue;
+    const at = new Date(o.start_time);
+    if (localDateIso(at) !== date) continue;
+    out.push({
+      type: 'open',
+      date,
+      start: localStartMinutes(at),
+      end: localStartMinutes(new Date(o.end_time)),
+      kind: null,
+    });
+  }
+
+  if (out.length === 0) return [{ type: 'off', date }];
+  return out.sort((a, b) => ('start' in a ? a.start : 0) - ('start' in b ? b.start : 0));
+}

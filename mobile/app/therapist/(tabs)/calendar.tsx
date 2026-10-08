@@ -23,21 +23,22 @@ import { T } from "@/components/ui/T";
 import { Tappable } from "@/components/ui/Tappable";
 import {
   addDays,
-  blocksForDay,
   dayLabel,
-  DEMO_TODAY,
+  realBlocksForDay,
+  todayIso,
   weekDays,
   weekStart,
   type Block,
 } from "@/lib/schedule";
-import { useApp, useBookings, useChildName } from "@/store/app";
+import { useApp, useChildName } from "@/store/app";
+import { useMyOpenTimes, useTherapistSessions } from "@/lib/clients";
 import { radius, space } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
 const VIEWS = ["Week", "Day"] as const;
-/** "This week" is the coming Monday to Sunday (the demo day is a Sunday), as on the family's Book. */
-const THIS_WEEK = weekStart(addDays(DEMO_TODAY, 1));
-const FIRST_WEEK = weekStart(DEMO_TODAY);
+/** The week containing today, Monday to Sunday. */
+const THIS_WEEK = weekStart(todayIso());
+const FIRST_WEEK = THIS_WEEK;
 const LAST_WEEK = addDays(THIS_WEEK, 21);
 
 /** "12 – 18 October" / "26 October – 1 November" */
@@ -55,15 +56,17 @@ const plural = (n: number, one: string, many: string) =>
 export default function Calendar() {
   const { c } = useTheme();
   const name = useChildName();
-  const availability = useApp((s) => s.availability);
-  const bookings = useBookings();
+  // Real open times and real sessions, so the calendar and Today cannot disagree.
+  const therapistId = useApp((s) => s.account?.id) ?? null;
+  const slots = useMyOpenTimes(therapistId);
+  const sessions = useTherapistSessions();
   const [view, setView] = useState<(typeof VIEWS)[number]>("Week");
   const [monday, setMonday] = useState(THIS_WEEK);
   const [day, setDay] = useState(THIS_WEEK);
 
   const days = weekDays(monday);
   const blocks: Record<string, Block[]> = Object.fromEntries(
-    days.map((d) => [d, blocksForDay(availability, bookings, d)]),
+    days.map((d) => [d, realBlocksForDay(slots, sessions, d)]),
   );
   const all = days.flatMap((d) => blocks[d]);
   const booked = all.filter((b) => b.type === "booked").length;

@@ -115,7 +115,16 @@ export const SEED_AVAILABILITY: Availability = {
 };
 
 /** A booked session on Priya's calendar. */
-export type Booking = { id: string; clientId: ClientId; date: string; start: number; lengthMin: number; kind: MeetKind };
+export type Booking = {
+  id: string;
+  clientId: ClientId;
+  date: string;
+  start: number;
+  lengthMin: number;
+  kind: MeetKind;
+  /** Set for real bookings: demo ones are looked up in CLIENTS, real ids are not there. */
+  clientName?: string;
+};
 
 /**
  * Priya's other bookings (Alex's come from the shared store, so a parent's booking shows up live).

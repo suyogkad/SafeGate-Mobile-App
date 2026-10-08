@@ -46,7 +46,8 @@ export function TimeBlock({ block, childName, onPress }: { block: Block; childNa
 
   if (block.type === 'booked') {
     const b = block.booking;
-    const who = b.clientId === 'alex' ? childName : CLIENTS[b.clientId].name;
+    // Real bookings bring their own name; a real client id is not in CLIENTS.
+    const who = b.clientName ?? (b.clientId === 'alex' ? childName : CLIENTS[b.clientId]?.name) ?? 'Client';
     return (
       <Tappable
         label={`${dayLabel(block.date)}, ${time.replace('–', 'to')}. ${who}, ${b.kind.toLowerCase()}. Open session`}
