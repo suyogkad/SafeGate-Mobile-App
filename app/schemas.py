@@ -258,11 +258,15 @@ class SafetyStats(BaseModel):
 
 
 class AccessLogRow(BaseModel):
+    """One access to a child's records. The actor is either an adult account or the
+    child's own device, so `user_id` is null for child-initiated access."""
+
     id: uuid.UUID
     timestamp: datetime
-    user_id: uuid.UUID
+    user_id: uuid.UUID | None
     user_name: str | None
     user_role: str | None
+    device_id: uuid.UUID | None = None
     child_id: uuid.UUID
     child_name: str | None
     action: str

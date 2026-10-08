@@ -262,8 +262,10 @@ async def access_log(
 
     response.headers["X-Total-Count"] = str(await _count(db, stmt))
     rows = (await db.execute(stmt.order_by(ChildAccessLog.timestamp.desc()).limit(limit).offset(offset))).scalars().all()
+    # Child-device rows have no adult actor, so drop the nulls before looking users up.
+    actor_ids = {r.accessed_by_user_id for r in rows if r.accessed_by_user_id is not None}
     users_result = await db.execute(
-        select(User.id, User.full_name, User.role).where(User.id.in_({r.accessed_by_user_id for r in rows} or {uuid.uuid4()}))
+        select(User.id, User.full_name, User.role).where(User.id.in_(actor_ids or {uuid.uuid4()}))
     )
     users = {uid: (name, role.value) for uid, name, role in users_result.all()}
     children = await _child_names(db, {r.child_id for r in rows})
@@ -274,6 +276,7 @@ async def access_log(
             user_id=r.accessed_by_user_id,
             user_name=users.get(r.accessed_by_user_id, (None, None))[0],
             user_role=users.get(r.accessed_by_user_id, (None, None))[1],
+            device_id=r.accessed_by_device_id,
             child_id=r.child_id,
             child_name=children.get(r.child_id),
             action=r.action,

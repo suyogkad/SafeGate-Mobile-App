@@ -75,11 +75,15 @@ async def _profile(db: AsyncSession, child: Child) -> ChildProfileOut:
     )
 
 
-async def _issue(db: AsyncSession, child: Child, kind: str, label: str | None, minutes: int) -> ChildTokenOut:
+async def _issue(
+    db: AsyncSession, child: Child, kind: str, label: str | None, minutes: int, action: str | None = None
+) -> ChildTokenOut:
     device = ChildDevice(child_id=child.id, kind=kind, label=label)
     db.add(device)
     await db.commit()
     await db.refresh(device)
+    if action:
+        await log_child_access(db, child.id, None, action, device_id=device.id)
     token = create_child_token(child.id, device.id, device.token_version, minutes)
     return ChildTokenOut(
         access_token=token,
@@ -275,11 +279,14 @@ async def link_child_device(payload: ChildLinkRequest, db: AsyncSession = Depend
 
     entry.used_at = now
     await db.commit()
-    issued = await _issue(
-        db, child, kind="linked", label="Child's phone", minutes=get_settings().child_device_token_days * 24 * 60
+    return await _issue(
+        db,
+        child,
+        kind="linked",
+        label="Child's phone",
+        minutes=get_settings().child_device_token_days * 24 * 60,
+        action="child_device_linked",
     )
-    await log_child_access(db, child.id, None, "child_device_linked")
-    return issued
 
 
 @router.get("/auth/child/me", response_model=ChildProfileOut)

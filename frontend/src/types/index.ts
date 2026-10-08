@@ -124,9 +124,11 @@ export interface SafetyStats {
 export interface AccessLogRow {
   id: string;
   timestamp: string;
-  user_id: string;
+  /** Null when the actor was the child's own device rather than an adult account. */
+  user_id: string | null;
   user_name: string | null;
   user_role: string | null;
+  device_id: string | null;
   child_id: string;
   child_name: string | null;
   action: string;

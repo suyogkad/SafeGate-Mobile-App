@@ -38,7 +38,19 @@ function AccessTab() {
                 <tr key={r.id} className="border-b border-border last:border-0">
                   <td className="px-5 py-3 text-[13px] text-text-muted">{formatDateTime(r.timestamp)}</td>
                   <td className="px-5 py-3 text-[13.5px] text-text">
-                    {r.user_name ?? "Unknown"} {r.user_role && <span className="text-[12px] text-text-muted">({r.user_role})</span>}
+                    {r.user_name ? (
+                      <>
+                        {r.user_name}{" "}
+                        {r.user_role && <span className="text-[12px] text-text-muted">({r.user_role})</span>}
+                      </>
+                    ) : r.device_id ? (
+                      // The child acting on their own phone, not an adult account.
+                      <>
+                        The child <span className="text-[12px] text-text-muted">(their own phone)</span>
+                      </>
+                    ) : (
+                      "Unknown"
+                    )}
                   </td>
                   <td className="px-5 py-3 text-[13.5px] text-text">{r.child_name ?? "Unknown"}</td>
                   <td className="px-5 py-3">

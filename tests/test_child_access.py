@@ -584,3 +584,35 @@ async def test_a_therapist_sees_only_children_assigned_to_them(client):
 
     mine = (await client.get("/children", headers=_auth_headers(t_token))).json()
     assert len(mine) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_audit_log_includes_child_initiated_access(client, db_session):
+    """The actor can be a child's own device rather than an adult account. The access
+    log must list those rows, not fail on them -- it is the compliance surface, and
+    a page that happens to contain one would otherwise return a 500."""
+    _, child, child_token = await _linked_child(client)
+    await client.post(
+        "/companion/reply",
+        json={"child_id": child["id"], "messages": [{"role": "user", "content": "hello"}]},
+        headers=_h(child_token),
+    )
+    admin_token = await _admin_token(client, db_session)
+
+    # A full page must not fail: before the fix, any page containing a child-device
+    # row returned 500 because user_id was declared non-null.
+    full = await client.get("/admin/audit/access?limit=200", headers=_auth_headers(admin_token))
+    assert full.status_code == 200, full.text
+
+    # Assert about this child's own rows, not whatever else the dev database holds.
+    resp = await client.get(
+        f"/admin/audit/access?child_id={child['id']}&limit=200", headers=_auth_headers(admin_token)
+    )
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+
+    by_device = [r for r in rows if r["user_id"] is None]
+    assert by_device, "child-initiated access is missing from the audit log"
+    # No actor at all would be a hole in the trail: every row names an adult or a phone.
+    assert all(r["device_id"] for r in by_device)
+    assert {"child_device_linked", "companion_reply"} <= {r["action"] for r in by_device}
