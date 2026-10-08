@@ -113,16 +113,79 @@ class Child(Base):
 
 
 class TherapistProfile(Base):
+    """What a therapist tells families about themselves, and when they work.
+
+    The written part (`title` through `clinic_address`) is what a parent reads when
+    choosing a therapist. The working part (`weekly_hours` onwards) is a template:
+    saving it generates the real, bookable `AvailabilitySlot` rows. Nothing here is
+    about a child, so none of it is health data.
+    """
+
     __tablename__ = "therapist_profiles"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False
     )
+    # "About you" on the therapist's own profile screen.
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     specialties: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # "Psychologist", "Occupational therapist", "Speech pathologist".
+    title: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    years_with_kids: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The one line on the directory card, and the headline on the profile.
+    blurb: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    tagline: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    # [{"emoji": "...", "text": "..."}] -- "Good fit for".
+    good_for: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    clinic_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    clinic_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # {"mon": [{"start": 540, "end": 720}], ...}: minutes from midnight in `timezone`.
+    weekly_hours: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # [{"id": "...", "from": "2026-10-26", "to": "2026-10-27", "label": "Conference"}]
+    time_off: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # The therapist's own zone: hours are local to them, slots are stored in UTC.
+    timezone: Mapped[str] = mapped_column(String(60), default="Australia/Sydney", nullable=False)
+    session_length_min: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    gap_min: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    offers_video: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    offers_in_person: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    booking_window_weeks: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    notice_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ChildGoal(Base):
+    """The therapist's goals for one child, in their own words.
+
+    Plain sentences a family would recognise, never scores or measurements. Written
+    by the child's own therapist; the parent can read them.
+    """
+
+    __tablename__ = "child_goals"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id"), unique=True, nullable=False, index=True
+    )
+    therapist_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    # ["Mornings before school feel calmer", ...]
+    goals: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -167,18 +230,35 @@ class TherapySession(Base):
 
 
 class SessionNote(Base):
+    """A therapist's notes on one session, in two clearly separate parts.
+
+    `highlights`, `shared` and `try_at_home` are written for the family and become
+    the parent's "Notes from <therapist>". `working` is the therapist's own and the
+    family never sees it -- the parent API must never return it (HANDOFF rule 21).
+    Nothing reaches the family until `shared_at` is set.
+    """
+
     __tablename__ = "session_notes"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("sessions.id"), unique=True, nullable=False, index=True
     )
     therapist_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
-    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # [{"emoji": "...", "text": "..."}]
+    highlights: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    shared: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # [{"title": "...", "line": "..."}]
+    try_at_home: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    working: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 

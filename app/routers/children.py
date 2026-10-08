@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Child, User, UserRole
+from app.db.models import Child, ChildGoal, User, UserRole
 from app.db.session import get_db
-from app.schemas import ChildCreate, ChildOut, ChildUpdate
+from app.schemas import ChildCreate, ChildOut, ChildUpdate, GoalsOut, GoalsUpdate
 from app.security import get_current_user, log_child_access, require_child_access, require_role
 
 router = APIRouter(prefix="/children", tags=["children"])
@@ -113,3 +113,47 @@ async def update_child(
     await db.commit()
     await db.refresh(child)
     return (await _enrich(db, [child]))[0]
+
+
+@router.get("/{child_id}/goals", response_model=GoalsOut)
+async def read_goals(
+    child: Child = Depends(require_child_access("view_goals")),
+    db: AsyncSession = Depends(get_db),
+) -> GoalsOut:
+    """What the therapist is working towards with this child, in plain words.
+
+    The family can read them: goals are written for them to recognise, and a parent
+    seeing the same three sentences their therapist sees is the point.
+    """
+    row = (await db.execute(select(ChildGoal).where(ChildGoal.child_id == child.id))).scalar_one_or_none()
+    if row is None:
+        return GoalsOut(child_id=child.id, goals=[], updated_at=None)
+    return GoalsOut(child_id=child.id, goals=list(row.goals or []), updated_at=row.updated_at)
+
+
+@router.put("/{child_id}/goals", response_model=GoalsOut)
+async def write_goals(
+    payload: GoalsUpdate,
+    current_user: User = Depends(get_current_user),
+    child: Child = Depends(require_child_access("update_goals")),
+    db: AsyncSession = Depends(get_db),
+) -> GoalsOut:
+    """Only the child's own therapist writes goals. A parent reads them but does
+    not set them, and an admin never touches clinical content."""
+    if current_user.role != UserRole.THERAPIST or child.therapist_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only this child's therapist can write goals",
+        )
+
+    goals = [g.strip() for g in payload.goals if g.strip()]
+    row = (await db.execute(select(ChildGoal).where(ChildGoal.child_id == child.id))).scalar_one_or_none()
+    if row is None:
+        row = ChildGoal(child_id=child.id, therapist_id=current_user.id, goals=goals)
+        db.add(row)
+    else:
+        row.goals = goals
+        row.therapist_id = current_user.id
+    await db.commit()
+    await db.refresh(row)
+    return GoalsOut(child_id=child.id, goals=list(row.goals or []), updated_at=row.updated_at)

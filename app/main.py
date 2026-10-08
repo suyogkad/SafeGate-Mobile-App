@@ -19,6 +19,7 @@ from app.routers import (
     child_access,
     children,
     companion,
+    notes,
     schedules,
     sessions,
     therapist,
@@ -61,6 +62,7 @@ app.include_router(admin_ops.router)
 app.include_router(sessions.router)
 app.include_router(schedules.router)
 app.include_router(companion.router)
+app.include_router(notes.router)
 app.include_router(therapists.router)
 app.include_router(therapist.router)
 

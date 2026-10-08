@@ -1,7 +1,7 @@
 """Pydantic request/response models."""
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -385,3 +385,163 @@ class TherapistAlertRow(BaseModel):
     # having acted and the family having acted.
     parent_seen_at: datetime | None
     noted_at: datetime | None
+
+
+class NoteHighlight(BaseModel):
+    emoji: str = Field(max_length=8)
+    text: str = Field(min_length=1, max_length=300)
+
+
+class NoteSuggestion(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    line: str = Field(default="", max_length=400)
+
+
+class SessionNotesUpdate(BaseModel):
+    """What a therapist writes. Plain words, no scores (HANDOFF rule 18)."""
+
+    highlights: list[NoteHighlight] = Field(default_factory=list, max_length=3)
+    shared: str = Field(default="", max_length=4000)
+    try_at_home: list[NoteSuggestion] = Field(default_factory=list, max_length=3)
+    working: str = Field(default="", max_length=8000)
+
+
+class SessionNotesOut(BaseModel):
+    """The therapist's view: both parts."""
+
+    session_id: uuid.UUID
+    highlights: list[NoteHighlight]
+    shared: str
+    try_at_home: list[NoteSuggestion]
+    working: str
+    shared_at: datetime | None
+    updated_at: datetime | None
+
+
+class SharedNotesOut(BaseModel):
+    """The family's view. Deliberately has no `working` field at all, so the
+    therapist's own notes cannot leak through this shape (HANDOFF rule 21)."""
+
+    session_id: uuid.UUID
+    therapist_name: str | None
+    highlights: list[NoteHighlight]
+    shared: str
+    try_at_home: list[NoteSuggestion]
+    shared_at: datetime
+
+
+# ---- Therapist profile, working hours, and goals -------------------------
+
+
+class GoodForItem(BaseModel):
+    emoji: str = Field(default="", max_length=8)
+    text: str = Field(min_length=1, max_length=120)
+
+
+class ClinicOut(BaseModel):
+    name: str
+    address: str
+
+
+class TherapistProfileUpdate(BaseModel):
+    """What the therapist edits about themselves. Name and email are not here:
+    those come from their invitation and change through support."""
+
+    title: str = Field(default="", max_length=60)
+    years_with_kids: int | None = Field(default=None, ge=1, le=60)
+    blurb: str = Field(default="", max_length=200)
+    tagline: str = Field(default="", max_length=200)
+    about: str = Field(default="", max_length=4000)
+    good_for: list[GoodForItem] = Field(default_factory=list, max_length=3)
+    clinic_name: str | None = Field(default=None, max_length=120)
+    clinic_address: str | None = Field(default=None, max_length=255)
+
+
+class TimeRange(BaseModel):
+    """Minutes from midnight in the therapist's own timezone. 540 = 9:00 am."""
+
+    start: int = Field(ge=0, le=1439)
+    end: int = Field(ge=1, le=1440)
+
+
+class TimeOffOut(BaseModel):
+    id: str
+    from_date: str
+    to_date: str
+    label: str = ""
+
+
+class TimeOffCreate(BaseModel):
+    from_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    to_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    label: str = Field(default="", max_length=80)
+
+
+WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+class WorkingHoursUpdate(BaseModel):
+    """The weekly template families are booked against. Saving it rebuilds the
+    open slots in the booking window; times a family already booked are kept."""
+
+    weekly: dict[str, list[TimeRange]] = Field(default_factory=dict)
+    session_length_min: int = Field(default=50, ge=15, le=180)
+    gap_min: int = Field(default=10, ge=0, le=60)
+    offers_video: bool = True
+    offers_in_person: bool = False
+    booking_window_weeks: int = Field(default=3, ge=1, le=12)
+    notice_days: int = Field(default=1, ge=0, le=28)
+    timezone: str = Field(default="Australia/Sydney", max_length=60)
+
+
+class WorkingHoursOut(WorkingHoursUpdate):
+    time_off: list[TimeOffOut] = Field(default_factory=list)
+    """How many open times families can see right now, after the rebuild."""
+    open_times: int = 0
+
+
+class TherapistMeOut(BaseModel):
+    """The signed-in therapist's own profile and hours, in one read."""
+
+    id: uuid.UUID
+    full_name: str
+    email: str
+    status: str
+    title: str
+    years_with_kids: int | None
+    blurb: str
+    tagline: str
+    about: str
+    good_for: list[GoodForItem]
+    clinic: ClinicOut | None
+    hours: WorkingHoursOut
+
+
+class TherapistPublicOut(BaseModel):
+    """What a parent reads when choosing a therapist: professional details only,
+    never an email or a phone number."""
+
+    id: uuid.UUID
+    full_name: str
+    title: str
+    years_with_kids: int | None
+    blurb: str
+    tagline: str
+    about: str
+    good_for: list[GoodForItem]
+    clinic: ClinicOut | None
+    offers_video: bool
+    offers_in_person: bool
+    session_length_min: int
+
+
+class GoalsUpdate(BaseModel):
+    """Plain sentences a family would recognise. No scores (HANDOFF rule 18)."""
+
+    goals: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(default_factory=list, max_length=4)
+
+
+class GoalsOut(BaseModel):
+    child_id: uuid.UUID
+    goals: list[str]
+    updated_at: datetime | None

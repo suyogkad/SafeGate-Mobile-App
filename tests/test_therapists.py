@@ -34,8 +34,10 @@ async def test_parent_can_list_therapists(client):
     assert resp.status_code == 200
     ids = {t["id"] for t in resp.json()}
     assert therapist_user["id"] in ids
+    # The directory carries a therapist's practice details, never their contact
+    # details: a parent choosing a therapist has no business with either.
     for t in resp.json():
-        assert set(t.keys()) == {"id", "full_name"}
+        assert not {"email", "phone", "hashed_password", "therapist_status"} & set(t.keys())
 
 
 @pytest.mark.asyncio
