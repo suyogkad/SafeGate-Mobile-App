@@ -371,3 +371,17 @@ class ConversationTurnOut(BaseModel):
     risk_level: str
     device_id: uuid.UUID | None
     device_label: str | None = None
+
+
+class TherapistAlertRow(BaseModel):
+    """A safety alert about one of this therapist's own clients."""
+
+    id: uuid.UUID
+    child_id: uuid.UUID
+    child_name: str | None
+    level: str
+    timestamp: datetime
+    # Null until the parent taps "I've seen this": the difference between nobody
+    # having acted and the family having acted.
+    parent_seen_at: datetime | None
+    noted_at: datetime | None

@@ -21,6 +21,7 @@ from app.routers import (
     companion,
     schedules,
     sessions,
+    therapist,
     therapists,
 )
 from app.scheduler import scheduler
@@ -61,6 +62,7 @@ app.include_router(sessions.router)
 app.include_router(schedules.router)
 app.include_router(companion.router)
 app.include_router(therapists.router)
+app.include_router(therapist.router)
 
 
 @app.get("/health")

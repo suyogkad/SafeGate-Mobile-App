@@ -1,5 +1,13 @@
-import { useEffect, useState } from 'react';
-import { listMyClients, listMySessions, type ApiSession } from '../api/therapist';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  listMyAlerts,
+  listMyClients,
+  listMyOpenTimes,
+  listMySessions,
+  type ApiSession,
+  type ApiSlot,
+  type ApiTherapistAlert,
+} from '../api/therapist';
 import { ALEX_PAST, type SessionNotes } from '../data/practice';
 import type { Notification } from '../data/notifications';
 import { isOpenUrgent, useApp } from '../store/app';
@@ -114,4 +122,36 @@ export function latestSharedId(notes: Record<string, SessionNotes>) {
 export function latestShared(notes: Record<string, SessionNotes>) {
   const id = latestSharedId(notes);
   return id ? notes[id] : null;
+}
+
+/** Alerts this therapist has not yet dealt with. Drives "Needs attention" on Today. */
+export function useTherapistAlerts(needsAttention = true) {
+  const [alerts, setAlerts] = useState<ApiTherapistAlert[]>([]);
+  const reload = useCallback(() => {
+    listMyAlerts(needsAttention)
+      .then(setAlerts)
+      .catch(() => {
+        /* offline or signed out: Today shows "nothing needs you" */
+      });
+  }, [needsAttention]);
+  useEffect(reload, [reload]);
+  return { alerts, reload };
+}
+
+/** The therapist's own open times, from the backend rather than a demo week. */
+export function useMyOpenTimes(therapistId: string | null | undefined) {
+  const [slots, setSlots] = useState<ApiSlot[]>([]);
+  useEffect(() => {
+    if (!therapistId) return;
+    let alive = true;
+    listMyOpenTimes(therapistId)
+      .then((s) => alive && setSlots(s.filter((x) => !x.is_booked)))
+      .catch(() => {
+        /* offline: the screen shows its empty state */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [therapistId]);
+  return slots;
 }

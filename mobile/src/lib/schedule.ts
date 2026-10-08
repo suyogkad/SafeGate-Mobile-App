@@ -11,6 +11,14 @@ import { THERAPISTS, type Therapist } from '../data/therapists';
 
 /** Today, as YYYY-MM-DD in the device's own timezone (not UTC, or the date flips
  * late in the evening in Australia). Every "this week" calculation hangs off it. */
+export function localDateIso(d: Date): string {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+/** Minutes since local midnight, to pair with localDateIso. */
+export const localStartMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
+
 export function todayIso(d = new Date()): string {
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);

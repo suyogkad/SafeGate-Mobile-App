@@ -12,6 +12,7 @@ import { NavyPanel } from '@/components/NavyPanel';
 import { Screen } from '@/components/Screen';
 import { Stagger } from '@/components/ui/Appear';
 import { Avatar } from '@/components/ui/bits';
+import { initialsOf } from '@/lib/time';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
@@ -49,7 +50,7 @@ export default function TherapistAccount() {
         <NavyPanel
           caption="PRACTITIONER"
           title={account?.name || 'Your practice'}
-          lead={<Avatar initials={(account?.name || 'T').charAt(0).toUpperCase()} size={72} />}
+          lead={<Avatar initials={initialsOf(account?.name)} size={72} />}
         >
           <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
             {account?.email || 'Signed in'}

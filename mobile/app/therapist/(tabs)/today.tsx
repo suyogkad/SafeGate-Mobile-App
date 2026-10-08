@@ -26,8 +26,9 @@ import { Tappable } from '@/components/ui/Tappable';
 import { PHOTOS } from '@/data/faces';
 import { NOTIFICATION_LOOK, type Notification } from '@/data/notifications';
 import { CLIENTS } from '@/data/practice';
-import { addDays, bookableSlots, dayLabel, dayShort, DEMO_TODAY, timeLabel, weekStart } from '@/lib/schedule';
-import { needsAttention, useClients, useTherapistSessions } from '@/lib/clients';
+import { dayLabel, dayShort, localDateIso, localStartMinutes, timeLabel } from '@/lib/schedule';
+import { useClients, useMyOpenTimes, useTherapistAlerts, useTherapistSessions } from '@/lib/clients';
+import { noteAlert } from '@/api/therapist';
 import { firstName, greeting, initialsOf, longDate, partOfDay } from '@/lib/time';
 import { isOpenUrgent, useApp, useBookings, useChildName, useUnreadCount } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
@@ -74,7 +75,9 @@ export default function TherapistToday() {
   const notifications = useApp((s) => s.notifications);
 
   // Urgent alerts first, then the rest newest first.
-  const needs = notifications.filter(needsAttention).sort((a, b) => Number(isOpenUrgent(b)) - Number(isOpenUrgent(a)));
+  // Real safety alerts about this therapist's own clients, newest first.
+  const { alerts, reload: reloadAlerts } = useTherapistAlerts(true);
+  const needs = [...alerts].sort((a, b) => Number(b.level === 'urgent') - Number(a.level === 'urgent'));
 
   // From Priya's calendar (her hours + bookings), so a parent's booking or a change in My hours shows up here live.
   const bookings = useBookings();
@@ -87,8 +90,21 @@ export default function TherapistToday() {
     .filter((s) => s.status === 'booked' && new Date(s.start_time).getTime() > Date.now())
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 3);
-  const monday = weekStart(addDays(DEMO_TODAY, 1));
-  const openTimes = bookableSlots(availability, bookings, monday, addDays(monday, 6));
+  // The therapist's real open times, this week only.
+  const therapistId = useApp((s) => s.account?.id) ?? null;
+  const allOpen = useMyOpenTimes(therapistId);
+  const weekEnd = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const openTimes = allOpen
+    .filter((o) => {
+      const t = new Date(o.start_time).getTime();
+      return t > Date.now() && t < weekEnd;
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  const todayIso = new Date().toDateString();
+  const todaySessions = sessions.filter(
+    (x) => x.status === 'booked' && new Date(x.start_time).toDateString() === todayIso,
+  );
 
   const actions: { title: string; icon: IconName; href: Href }[] = [
     { title: 'Set my hours', icon: 'clock', href: '/therapist/availability' },
@@ -134,9 +150,36 @@ export default function TherapistToday() {
         <View style={{ gap: space.md }}>
           <SectionHeader title="Needs attention" />
           {needs.length ? (
-            needs.map((n, i) => (
-              <Appear key={n.id} delay={i * 60}>
-                <NeedsCard n={n} />
+            needs.map((a, i) => (
+              <Appear key={a.id} delay={i * 60}>
+                <Card padding={space.lg}>
+                  <View style={{ gap: space.sm }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                      <Icon name="alert-circle" size={22} color={c.onHelpTint} />
+                      <T v="bodyLg" style={{ flex: 1 }}>
+                        {a.child_name ?? 'A client'}’s app switched to calm steps
+                      </T>
+                    </View>
+                    <T v="bodySm" color="textMuted">
+                      {new Date(a.timestamp).toLocaleString()} ·{' '}
+                      {a.parent_seen_at ? 'The family has seen this' : 'Not seen by the family yet'}
+                    </T>
+                    <Button
+                      title="Noted"
+                      size="small"
+                      variant="outline"
+                      style={{ alignSelf: 'flex-start' }}
+                      label={`Mark ${a.child_name ?? 'this'} alert as noted. It clears your list only.`}
+                      onPress={async () => {
+                        try {
+                          await noteAlert(a.id);
+                        } finally {
+                          reloadAlerts();
+                        }
+                      }}
+                    />
+                  </View>
+                </Card>
               </Appear>
             ))
           ) : (
@@ -153,14 +196,32 @@ export default function TherapistToday() {
 
         <View style={{ gap: space.md }}>
           <SectionHeader title="Today" />
-          <Card padding={space.lg}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-              <Icon name="calendar" size={22} color={c.textSecondary} />
-              <T v="bodyLg" color="textSecondary">
-                No sessions today
-              </T>
-            </View>
-          </Card>
+          {todaySessions.length === 0 ? (
+            <Card padding={space.lg}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <Icon name="calendar" size={22} color={c.textSecondary} />
+                <T v="bodyLg" color="textSecondary">
+                  No sessions today
+                </T>
+              </View>
+            </Card>
+          ) : (
+            todaySessions.map((x) => {
+              const at = new Date(x.start_time);
+              return (
+                <SessionCard
+                  key={x.id}
+                  date={localDateIso(at)}
+                  start={localStartMinutes(at)}
+                  initials={(x.child_name ?? '?').charAt(0)}
+                  tag={x.video_room_url ? 'VIDEO CALL' : 'SESSION'}
+                  line={x.child_name ?? 'Client'}
+                  label={`Today, ${timeLabel(at.getHours() * 60 + at.getMinutes())}. ${x.child_name ?? 'Client'}. Open the session`}
+                  onPress={() => router.push(`/therapist/session?id=${x.id}` as Href)}
+                />
+              );
+            })
+          )}
         </View>
 
         <View style={{ gap: space.md }}>
@@ -172,8 +233,8 @@ export default function TherapistToday() {
           ) : null}
           {comingUp.map((s, i) => {
             const at = new Date(s.start_time);
-            const date = at.toISOString().slice(0, 10);
-            const start = at.getHours() * 60 + at.getMinutes();
+            const date = localDateIso(at);
+            const start = localStartMinutes(at);
             const who = s.child_name ?? 'Client';
             const parent = clients.find((c) => c.id === s.child_id)?.parent;
             const kind = s.video_room_url ? 'Video call' : 'Session';
@@ -202,13 +263,15 @@ export default function TherapistToday() {
           )}
           <ChipRow>
             {openTimes.map((o) => {
-              const short = `${dayShort(o.date).split(' ')[0]} ${timeLabel(o.start)}`;
+              const at = new Date(o.start_time);
+              const date = localDateIso(at);
+              const start = localStartMinutes(at);
               return (
                 <Chip
-                  key={`${o.date}${o.start}`}
-                  label={short}
-                  a11yLabel={`Open time, ${dayLabel(o.date)}, ${timeLabel(o.start)}. Change or remove`}
-                  onPress={() => router.push(`/therapist/slot?date=${o.date}&start=${o.start}${o.extraId ? `&extra=${o.extraId}` : ''}` as Href)}
+                  key={o.id}
+                  label={`${dayShort(date).split(' ')[0]} ${timeLabel(start)}`}
+                  a11yLabel={`Open time, ${dayLabel(date)}, ${timeLabel(start)}. Change or remove`}
+                  onPress={() => router.push(`/therapist/slot?date=${date}&start=${start}` as Href)}
                 />
               );
             })}

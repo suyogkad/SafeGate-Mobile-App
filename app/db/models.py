@@ -261,6 +261,9 @@ class Alert(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The therapist's own "Noted": it clears their list only. Acknowledging on the
+    # family's behalf stays the parent's action (HANDOFF T09).
+    therapist_noted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

@@ -50,3 +50,25 @@ export function addOpenTime(startTime: string, endTime: string): Promise<ApiSlot
 export function removeOpenTime(slotId: string): Promise<void> {
   return api.delete<void>(`/availability/${slotId}`);
 }
+
+/** A safety alert about one of this therapist's clients. Says what happened, never
+ * what the child wrote. */
+export type ApiTherapistAlert = {
+  id: string;
+  child_id: string;
+  child_name: string | null;
+  level: 'concern' | 'urgent';
+  timestamp: string;
+  /** Null until the family taps "I've seen this". */
+  parent_seen_at: string | null;
+  noted_at: string | null;
+};
+
+export function listMyAlerts(needsAttention = false): Promise<ApiTherapistAlert[]> {
+  return api.get<ApiTherapistAlert[]>(`/therapist/alerts${needsAttention ? '?needs_attention=true' : ''}`);
+}
+
+/** Clears it from this therapist's own list. Nobody else is affected. */
+export function noteAlert(alertId: string): Promise<void> {
+  return api.post<void>(`/therapist/alerts/${alertId}/note`);
+}
