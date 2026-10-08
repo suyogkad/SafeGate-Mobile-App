@@ -901,8 +901,10 @@ Copies parent Account: "PRACTITIONER" panel with Priya's photo (no character), Y
 | Read to me | `expo-speech` on device (en-AU). | Can stay on device, or a TTS server. |
 | Booking and availability | Worked out on the device from each therapist's hours (`src/lib/schedule.ts`); Sam's and Mei's hours are fixed; no payment. | The availability + booking service (time zones, double-booking protection); keep the rules: notice, booking window, time off, one way of meeting per time. |
 | Notifications | Made in the store by the actions; seeded history; no real push. | Notification service + push, following rule 20 and the Alerts settings. |
-| Therapist area | One demo therapist (Priya) on the same device; static clients Mia and Leo; Join video call and Message are demo alerts. | Therapist accounts, a client list from real family links, sharing permissions (rule 19), the notes service (rule 21), video links. |
-| Session "Join" | Disabled button. | Video call link. |
+| Therapist area | **Built against the backend (8 Oct 2026).** Real sign-in, caseload, calendar, hours, profile, goals, sessions, notes (rule 21) and alerts. Still missing an endpoint: what a family has *shared* (rule 19), and messaging. | Sharing permissions per family; messaging if it's added later. |
+| Therapist notifications | Worked out from alerts, sessions needing notes and bookings. | A notification service + push, following rule 20. |
+| Session "Join" | **Real.** A per-participant link from the backend, only inside the session's own window. In-person sessions have no room and say so. | — |
+| Read the conversation (therapist) | **Removed.** The backend gives a child's chats to the **parent only**; a therapist reads one only if the family shares it (rule 19). The Alert screen says so instead. | Sharing permissions per family. |
 | Share with Priya, Send Priya a note, Message Priya / Jordan | Share is a local flag that the therapist area reads; messages are demo alerts (no messaging in the MVP). | Sharing permissions per family; messaging if it's added later. |
 | Contact emergency services | Records who/when locally. | Whatever the real escalation process is; always behind the confirm. |
 | Insights, check-in charts, summaries | Static. | Aggregates; AI summaries must follow rule 2 and stay parent-only. |
