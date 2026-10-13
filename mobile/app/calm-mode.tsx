@@ -2,10 +2,18 @@
  * C26 Calm mode (+ C28 emergency order): the quietest screen in the app. Header with Get help only, the step card
  * with dashes, the call-someone card. No characters, emoji, chips, red or timers.
  *
- * The app switches here when something serious comes up (demo: typing "calm" in Talk). No back, no close,
- * no tab bar, and the Android back button does nothing; Get help is always there.
- * The truthful line (calmLead) sits right under the opening line and updates live when a grown-up acts.
- * Emergency order (C28): ?order=emergency, or automatically once a grown-up has asked emergency services to help.
+ * The app switches here when the safety layer flags a message. No back, no close, no tab
+ * bar, and the Android back button does nothing; Get help is always there.
+ *
+ * The truthful line comes from the **server** (`GET /companion/calm-state`) and is
+ * re-asked while this screen is open, so it changes when a grown-up actually acts. The
+ * app cannot know on its own whether a parent has seen it, and this screen is the one
+ * place it must not guess (rule 12). The server's answer carries no risk level, no score
+ * and no classifier output -- the child is told what grown-ups have done, never how they
+ * were assessed (rule 5).
+ *
+ * Emergency order (C28): ?order=emergency, or automatically once a grown-up has recorded
+ * asking emergency services to help.
  */
 import { useEffect } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,7 +29,8 @@ import { T } from '@/components/ui/T';
 import { CALM_MODE_ACTIVITY } from '@/data/calm';
 import { helpline } from '@/data/helplines';
 import { callNumber } from '@/lib/call';
-import { calmLead } from '@/lib/calmLead';
+import { calmLead, calmLeadFor } from '@/lib/calmLead';
+import { finishCalm, useCalmState } from '@/lib/calmState';
 import { useApp } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -32,8 +41,13 @@ export default function CalmMode() {
   const { c } = useTheme();
   const calmMode = useApp((s) => s.calmMode);
   const emergency = useApp((s) => s.emergency);
-  const emergencyOrder = useLocalSearchParams<{ order?: string }>().order === 'emergency' || !!emergency;
-  const lead = calmLead(calmMode, emergency);
+  const { state } = useCalmState();
+  // The server's answer wins. Its own local state is the fallback for the moment
+  // before the first reply arrives, or when the phone is offline.
+  const lead = state ? calmLeadFor(state) : calmLead(calmMode, emergency);
+  const emergencyOrder =
+    useLocalSearchParams<{ order?: string }>().order === 'emergency' ||
+    (state ? state.emergency_requested : !!emergency);
 
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(OPENING);
@@ -47,7 +61,12 @@ export default function CalmMode() {
   }, [lead]);
 
   const n000 = helpline('000');
-  const finish = () => router.replace('/feeling-now?from=calmMode');
+  const finish = () => {
+    // Remember this one is worked through, so reopening the app does not drop the
+    // child back into calm steps they have finished.
+    void finishCalm(state?.started_at);
+    router.replace('/feeling-now?from=calmMode');
+  };
 
   const truthful = (
     <Card tone="tint" padding={space.lg}>

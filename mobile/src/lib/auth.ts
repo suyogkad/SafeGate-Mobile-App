@@ -17,6 +17,7 @@ import {
 } from '../api/auth';
 import { listChildren } from '../api/children';
 import { ApiError, currentSession } from './api';
+import { clearFinishedCalm, shouldShowCalm } from './calmState';
 import { useApp } from '../store/app';
 
 /** Pulls the parent's first child into the store, so the child's screens have an id to use. */
@@ -115,6 +116,9 @@ export function linkCodeFor(childId: string) {
 
 export async function signOutEverywhere(): Promise<void> {
   await apiSignOut();
+  // Whose calm steps were finished is about one child, so it must not outlive their
+  // session on a phone another child might be handed.
+  await clearFinishedCalm();
   useApp.getState().signOut();
 }
 
@@ -127,7 +131,9 @@ export async function signOutEverywhere(): Promise<void> {
  *
  * Returns where the app should go, so the splash can route by session.
  */
-export async function restoreSession(): Promise<'/parent/home' | '/therapist/today' | '/home' | '/welcome'> {
+export async function restoreSession(): Promise<
+  '/parent/home' | '/therapist/today' | '/home' | '/calm-mode' | '/welcome'
+> {
   const session = await currentSession();
   if (!session) return '/welcome';
 
@@ -142,6 +148,15 @@ export async function restoreSession(): Promise<'/parent/home' | '/therapist/tod
         therapistName: child.therapist_name,
       });
       useApp.getState().linkChild();
+
+      // Calm mode has to survive the app being closed (HANDOFF §10.5). The server
+      // says whether something is still open; the device remembers whether this
+      // child already worked through it.
+      const calm = await shouldShowCalm();
+      if (calm?.show) {
+        useApp.getState().setCalmMode(calm.state.seen_by_grown_up ? 'seen' : 'active');
+        return '/calm-mode';
+      }
       return '/home';
     }
 

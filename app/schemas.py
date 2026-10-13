@@ -619,3 +619,84 @@ class CalmStateOut(BaseModel):
     """True once a parent said they asked emergency services to help."""
     emergency_requested: bool
     started_at: datetime | None
+
+
+class ChildSessionOut(BaseModel):
+    """A session as the child whose session it is may see it.
+
+    Deliberately smaller than `SessionOut`: the time, how they are meeting and who
+    with. No notes (those are between the therapist and the parent), no ids the
+    child's app has no use for, and no video link -- joining a call is the parent's
+    and the therapist's, and the child is with their parent.
+    """
+
+    id: uuid.UUID
+    start_time: datetime
+    end_time: datetime
+    status: SessionStatus
+    meeting_kind: MeetingKind
+    therapist_name: str | None
+    clinic_name: str | None = None
+
+
+# ---- The child's own records: check-ins and the journal -------------------
+
+MOOD_IDS = ("bad", "notGreat", "ok", "good", "great")
+MoodId = Literal["bad", "notGreat", "ok", "good", "great"]
+
+
+class CheckinCreate(BaseModel):
+    """A child saying how they feel. Words and topics are theirs to pick, or to skip."""
+
+    mood: MoodId
+    words: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list, max_length=12)
+    topics: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list, max_length=12)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CheckinSavedOut(BaseModel):
+    """What the child's own app is told back.
+
+    No risk level and no score (HANDOFF rule 5). `calm` is the one thing it needs to
+    know: whether to switch to calm steps. It is not told why.
+    """
+
+    id: uuid.UUID
+    created_at: datetime
+    calm: bool = False
+
+
+class CheckinOut(BaseModel):
+    """A check-in as the child's own parent may read it, in the child's words."""
+
+    id: uuid.UUID
+    created_at: datetime
+    mood: MoodId
+    words: list[str]
+    topics: list[str]
+    note: str | None
+    device_id: uuid.UUID | None
+
+
+class JournalCreate(BaseModel):
+    prompt: str | None = Field(default=None, max_length=200)
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class JournalSavedOut(BaseModel):
+    """As with a check-in: whether to switch to calm steps, and nothing about why."""
+
+    id: uuid.UUID
+    created_at: datetime
+    calm: bool = False
+
+
+class JournalEntryOut(BaseModel):
+    """An entry as the child, or their own parent, may read it. The child is told
+    plainly that their grown-up can read these (HANDOFF rule 3)."""
+
+    id: uuid.UUID
+    created_at: datetime
+    prompt: str | None
+    text: str
+    device_id: uuid.UUID | None = None

@@ -21,15 +21,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Child, ChildDevice, ChildLinkCode, ConversationLog, User, UserRole
+from app.db.models import (
+    Child,
+    ChildCheckin,
+    ChildDevice,
+    ChildJournalEntry,
+    ChildLinkCode,
+    ConversationLog,
+    User,
+    UserRole,
+)
 from app.db.session import get_db
 from app.schemas import (
+    CheckinOut,
     ChildDeviceOut,
     ConversationTurnOut,
     ChildLinkCodeOut,
     ChildLinkRequest,
     ChildProfileOut,
     ChildTokenOut,
+    JournalEntryOut,
 )
 from app.security import (
     ChildPrincipal,
@@ -294,3 +305,75 @@ async def child_me(
     principal: ChildPrincipal = Depends(get_current_child), db: AsyncSession = Depends(get_db)
 ) -> ChildProfileOut:
     return await _profile(db, principal.child)
+
+
+@router.get("/children/{child_id}/checkins", response_model=list[CheckinOut])
+async def read_checkins(
+    child_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    parent: User = Depends(require_role(UserRole.PARENT)),
+    db: AsyncSession = Depends(get_db),
+) -> list[CheckinOut]:
+    """How the child said they were feeling, in their own words.
+
+    Parent-only, like the conversations. An admin never reaches this: they see that
+    something was flagged, never what a child chose or wrote. A therapist sees it only
+    if the family shares it (HANDOFF rule 19), which is not built yet.
+    """
+    child = await _parents_child(db, child_id, parent)
+    rows = (
+        await db.execute(
+            select(ChildCheckin)
+            .where(ChildCheckin.child_id == child.id)
+            .order_by(ChildCheckin.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars().all()
+    await log_child_access(db, child.id, parent.id, "checkins_read")
+    return [
+        CheckinOut(
+            id=r.id,
+            created_at=r.created_at,
+            mood=r.mood,
+            words=list(r.words or []),
+            topics=list(r.topics or []),
+            note=r.note,
+            device_id=r.device_id,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/children/{child_id}/journal", response_model=list[JournalEntryOut])
+async def read_journal(
+    child_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    parent: User = Depends(require_role(UserRole.PARENT)),
+    db: AsyncSession = Depends(get_db),
+) -> list[JournalEntryOut]:
+    """What the child wrote in their journal.
+
+    The child's app tells them plainly that their grown-up can read this (rule 3), and
+    the product depends on that being true -- so the parent gets the real words. An
+    admin never does.
+    """
+    child = await _parents_child(db, child_id, parent)
+    rows = (
+        await db.execute(
+            select(ChildJournalEntry)
+            .where(ChildJournalEntry.child_id == child.id)
+            .order_by(ChildJournalEntry.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars().all()
+    await log_child_access(db, child.id, parent.id, "journal_read")
+    return [
+        JournalEntryOut(
+            id=r.id, created_at=r.created_at, prompt=r.prompt, text=r.text, device_id=r.device_id
+        )
+        for r in rows
+    ]

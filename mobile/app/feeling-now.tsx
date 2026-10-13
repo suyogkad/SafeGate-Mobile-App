@@ -17,7 +17,8 @@ import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { FACES } from '@/data/faces';
-import { calmLead } from '@/lib/calmLead';
+import { calmLead, calmLeadFor } from '@/lib/calmLead';
+import { useCalmState } from '@/lib/calmState';
 import { useApp } from '@/store/app';
 import { moodColors, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -29,6 +30,9 @@ export default function FeelingNow() {
   const fromCalmMode = useLocalSearchParams<{ from?: string }>().from === 'calmMode';
   const calmMode = useApp((s) => s.calmMode);
   const emergency = useApp((s) => s.emergency);
+  // Same truthful line as calm mode, from the same place, so it cannot change
+  // meaning when the child moves between the two screens.
+  const { state } = useCalmState(fromCalmMode ? 15000 : 0);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
@@ -98,7 +102,7 @@ export default function FeelingNow() {
             <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
               <Icon name="heart" size={22} color={c.brand} />
               <T v="bodyLg" color="brand" style={{ flex: 1 }}>
-                {calmLead(calmMode, emergency)}
+                {state ? calmLeadFor(state) : calmLead(calmMode, emergency)}
               </T>
             </View>
           </Card>

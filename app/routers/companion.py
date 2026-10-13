@@ -18,10 +18,31 @@ from app.ai.prompts import COMPANION_SYSTEM_PROMPT
 from app.ai.providers import generate, transcribe
 from app.alerts import send_alerts_for_risk
 from app.config import get_settings
-from app.db.models import Child, ConversationLog, RiskLevel, User, UserRole
+from app.db.models import (
+    Child,
+    ChildCheckin,
+    ChildJournalEntry,
+    ConversationLog,
+    RiskLevel,
+    TherapistProfile,
+    TherapySession,
+    User,
+    UserRole,
+)
 from app.db.session import get_db
-from app.schemas import CompanionReplyRequest, CompanionReplyResponse, TranscriptOut
-from app.security import Actor, get_actor, log_child_access
+from app.routers.sessions import complete_finished_sessions
+from app.schemas import (
+    CheckinCreate,
+    CheckinSavedOut,
+    ChildSessionOut,
+    CompanionReplyRequest,
+    CompanionReplyResponse,
+    JournalCreate,
+    JournalEntryOut,
+    JournalSavedOut,
+    TranscriptOut,
+)
+from app.security import Actor, ChildPrincipal, get_actor, get_current_child, log_child_access
 
 router = APIRouter(prefix="/companion", tags=["companion"])
 logger = logging.getLogger(__name__)
@@ -189,3 +210,167 @@ async def transcribe_speech(
 
     await log_child_access(db, child.id, actor.user_id, "speech_transcribed", device_id=actor.device_id)
     return TranscriptOut(text=text)
+
+
+@router.get("/my-sessions", response_model=list[ChildSessionOut])
+async def my_sessions(
+    principal: ChildPrincipal = Depends(get_current_child),
+    db: AsyncSession = Depends(get_db),
+) -> list[ChildSessionOut]:
+    """The child's own sessions, soonest first.
+
+    A child cannot reach `GET /sessions`: that is an adult route, and it carries
+    things that are not theirs (whether their therapist has written notes, for one).
+    This returns only what their own screens show -- when it is, how they are
+    meeting, and who with.
+    """
+    await complete_finished_sessions(db)
+
+    rows = (
+        await db.execute(
+            select(TherapySession)
+            .where(TherapySession.child_id == principal.child.id)
+            .order_by(TherapySession.start_time)
+        )
+    ).scalars().all()
+
+    names: dict = {}
+    clinics: dict = {}
+    if rows:
+        ids = {r.therapist_id for r in rows}
+        names = dict((await db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))).all())
+        clinics = dict(
+            (
+                await db.execute(
+                    select(TherapistProfile.user_id, TherapistProfile.clinic_name).where(
+                        TherapistProfile.user_id.in_(ids)
+                    )
+                )
+            ).all()
+        )
+
+    await principal.log(db, "view_own_sessions")
+    return [
+        ChildSessionOut(
+            id=r.id,
+            start_time=r.start_time,
+            end_time=r.end_time,
+            status=r.status,
+            meeting_kind=r.meeting_kind,
+            therapist_name=names.get(r.therapist_id),
+            clinic_name=clinics.get(r.therapist_id) if r.meeting_kind == "in_person" else None,
+        )
+        for r in rows
+    ]
+
+
+async def _check_child_text(text: str | None) -> tuple[RiskLevel, bool]:
+    """Run free text a child wrote through the safety layer.
+
+    Safety rule 2: every child message goes through the defence layer. Text a child
+    types into their journal or a check-in note is a child message -- "I want to die"
+    written in a journal is no less serious than typed to the companion. There is no
+    AI reply to check here, so the order is: check the text, save it, alert.
+    """
+    if not text or not text.strip():
+        return RiskLevel.NONE, False
+    return await safety.classify_child_message(text)
+
+
+@router.post("/checkins", response_model=CheckinSavedOut, status_code=status.HTTP_201_CREATED)
+async def save_checkin(
+    payload: CheckinCreate,
+    background_tasks: BackgroundTasks,
+    principal: ChildPrincipal = Depends(get_current_child),
+    db: AsyncSession = Depends(get_db),
+) -> CheckinSavedOut:
+    """The child saying how they feel.
+
+    A mood on its own never raises an alert: the design has the child choose from
+    their own words and the parent read them, not a threshold that fires. Free text
+    in `note` does go through the safety layer, like any other child message.
+    """
+    risk, classifier_failed = await _check_child_text(payload.note)
+
+    row = ChildCheckin(
+        child_id=principal.child.id,
+        device_id=principal.device.id,
+        mood=payload.mood,
+        words=payload.words,
+        topics=payload.topics,
+        note=payload.note,
+        risk_level=risk,
+        flagged=risk != RiskLevel.NONE,
+        classifier_failed=classifier_failed,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    await principal.log(db, "checkin_saved")
+
+    if risk != RiskLevel.NONE:
+        background_tasks.add_task(send_alerts_for_risk, principal.child.id, risk)
+
+    # The child is told whether to switch to calm steps, never the level (rule 5).
+    return CheckinSavedOut(id=row.id, created_at=row.created_at, calm=risk != RiskLevel.NONE)
+
+
+@router.post("/journal", response_model=JournalSavedOut, status_code=status.HTTP_201_CREATED)
+async def save_journal_entry(
+    payload: JournalCreate,
+    background_tasks: BackgroundTasks,
+    principal: ChildPrincipal = Depends(get_current_child),
+    db: AsyncSession = Depends(get_db),
+) -> JournalSavedOut:
+    """Something the child wrote in their journal.
+
+    It goes through the safety layer before it is saved, and a flagged entry alerts
+    the same people a flagged message in Talk does. The child's app tells them their
+    grown-up can read this, and the product depends on that being true.
+    """
+    risk, classifier_failed = await _check_child_text(payload.text)
+
+    row = ChildJournalEntry(
+        child_id=principal.child.id,
+        device_id=principal.device.id,
+        prompt=payload.prompt,
+        text=payload.text,
+        risk_level=risk,
+        flagged=risk != RiskLevel.NONE,
+        classifier_failed=classifier_failed,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    await principal.log(db, "journal_entry_saved")
+
+    if risk != RiskLevel.NONE:
+        background_tasks.add_task(send_alerts_for_risk, principal.child.id, risk)
+
+    return JournalSavedOut(id=row.id, created_at=row.created_at, calm=risk != RiskLevel.NONE)
+
+
+@router.get("/my-journal", response_model=list[JournalEntryOut])
+async def my_journal(
+    limit: int = 50,
+    principal: ChildPrincipal = Depends(get_current_child),
+    db: AsyncSession = Depends(get_db),
+) -> list[JournalEntryOut]:
+    """The child's own entries, newest first.
+
+    Their journal is theirs to re-read. It carries no risk level: the child is never
+    shown what the safety layer decided about their own words (rule 5), and there is
+    no field for one in this shape.
+    """
+    rows = (
+        await db.execute(
+            select(ChildJournalEntry)
+            .where(ChildJournalEntry.child_id == principal.child.id)
+            .order_by(ChildJournalEntry.created_at.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    ).scalars().all()
+    await principal.log(db, "view_own_journal")
+    return [
+        JournalEntryOut(id=r.id, created_at=r.created_at, prompt=r.prompt, text=r.text) for r in rows
+    ]

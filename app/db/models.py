@@ -383,6 +383,74 @@ class Alert(Base):
     )
 
 
+class ChildCheckin(Base):
+    """A child saying how they feel, in their own words.
+
+    `mood`, `words` and `topics` are picked from fixed lists in the child's app, so they
+    are the child's own vocabulary rather than a score -- the child never sees a number
+    and neither does anyone else (HANDOFF rule 14).
+
+    `note` is free text, so it goes through the safety layer like any other child
+    message (safety rule 2): `risk_level` and `flagged` record what the classifier
+    decided, and `classifier_failed` records when it could not decide and the message
+    was treated as a concern.
+    """
+
+    __tablename__ = "child_checkins"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id"), nullable=False, index=True
+    )
+    # Which phone it came from, so a parent can tell. Null for a parent-hosted sitting.
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("child_devices.id"), nullable=True
+    )
+    mood: Mapped[str] = mapped_column(String(30), nullable=False)
+    # ["Worried", "Tired", ...] -- the words the child picked, not a diagnosis.
+    words: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # ["School", "Sleep", ...] -- what it was about. The child may pick none.
+    topics: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Free text, when the child's flow asks for any. Nothing collects one today.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_level: Mapped[RiskLevel] = mapped_column(default=RiskLevel.NONE, nullable=False)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    classifier_failed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ChildJournalEntry(Base):
+    """Something a child wrote in their journal.
+
+    The child's app tells them plainly that their grown-up can read this (rule 3), so
+    the parent gets the real words. It is free text a child wrote, which makes it a
+    child message: it goes through the safety layer exactly like a message in Talk
+    (safety rule 2), because "I want to die" written in a journal is no less serious
+    than typed to the companion.
+    """
+
+    __tablename__ = "child_journal_entries"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id"), nullable=False, index=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("child_devices.id"), nullable=True
+    )
+    # The idea the child started from, when they used one.
+    prompt: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_level: Mapped[RiskLevel] = mapped_column(default=RiskLevel.NONE, nullable=False)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    classifier_failed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ChildAccessLog(Base):
     """Audit trail: who accessed a child's records, what they did, and when."""
 
