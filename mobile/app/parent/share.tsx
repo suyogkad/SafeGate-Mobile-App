@@ -1,8 +1,14 @@
 /**
- * P22 Share with Priya (dialog). A centred confirmation card on the brand background (it's a route, reached from
- * Home, the transcript and quick actions). Share → shareWeek(); the same card confirms "Shared with Priya".
- * Chats are only shared if the parent chooses them: nothing else leaves.
+ * P22 Share with your therapist. A centred confirmation card: sharing with the therapist
+ * is always the parent's explicit choice, and chats are only shared one at a time.
+ *
+ * There is no sharing endpoint yet, and the therapist's own screens say the same thing
+ * from their side ("Nothing shared yet"). So this screen does not pretend to share:
+ * it says what sharing will do and what the therapist can already see, because telling
+ * a parent their child's week went to their therapist when it did not is worse than
+ * saying "not yet".
  */
+import { router } from 'expo-router';
 import { Image, View } from 'react-native';
 import { goBack } from '@/components/Header';
 import { Screen } from '@/components/Screen';
@@ -11,54 +17,61 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { ART } from '@/data/faces';
-import { useApp, useChildName, useTherapistFirstName } from '@/store/app';
+import { useFamilySessions, useMyChild } from '@/lib/family';
+import { firstName } from '@/lib/time';
 import { radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 export default function Share() {
   const { c } = useTheme();
-  const name = useChildName();
-  const therapistFirst = useTherapistFirstName();
-  const shared = useApp((s) => s.sharedWeek);
-  const session = useApp((s) => s.session);
-  const weekday = session ? session.dateLabel.split(' ')[0] : 'your next';
+  const child = useMyChild();
+  const sessions = useFamilySessions();
+  const name = child?.full_name || 'your child';
+  const therapist = child?.therapist_name ?? sessions[0]?.therapist_name ?? null;
+  const therapistFirst = therapist ? firstName(therapist) : 'your therapist';
 
   return (
     <Screen backdrop="brand" contentStyle={{ flexGrow: 1, justifyContent: 'center' }}>
       <Appear>
         <View
           accessibilityViewIsModal
-          accessibilityLiveRegion="polite"
-          style={{ backgroundColor: c.bg, borderRadius: radius.panel, padding: space.xl, gap: space.lg, alignItems: 'center', ...shadow.lift }}
+          style={{
+            backgroundColor: c.bg,
+            borderRadius: radius.panel,
+            padding: space.xl,
+            gap: space.lg,
+            alignItems: 'center',
+            ...shadow.lift,
+          }}
         >
-          <Image source={ART.cheer} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no" style={{ width: 104, height: 104 }} />
-          {shared ? (
-            <>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                <Icon name="check-circle" size={24} color={c.onSuccessTint} />
-                <T v="title" header>
-                  Shared with {therapistFirst}
-                </T>
-              </View>
-              <T v="body" color="textSecondary" center>
-                {therapistFirst} can see {name}'s check-ins and this week's summary before {weekday}'s session.
-              </T>
-              <Button title="Done" onPress={() => goBack('/parent/home')} style={{ alignSelf: 'stretch' }} />
-            </>
-          ) : (
-            <>
-              <T v="title" center header>
-                Share this week with {therapistFirst}?
-              </T>
-              <T v="body" color="textSecondary" center>
-                {therapistFirst} will see {name}'s check-ins and this summary before {weekday}'s session. Chats are only shared if you choose them.
-              </T>
-              <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-                <Button title="Share" icon="send" onPress={() => useApp.getState().shareWeek()} />
-                <Button title="Not now" variant="outline" onPress={() => goBack('/parent/home')} />
-              </View>
-            </>
-          )}
+          <Image
+            source={ART.cheer}
+            resizeMode="contain"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+            style={{ width: 108, height: 108 }}
+          />
+          <T v="heading" center header>
+            Sharing isn’t ready yet
+          </T>
+          <T v="body" color="textSecondary" center>
+            Sending {name}’s week to {therapistFirst} is still being built. When it is ready, you’ll choose exactly
+            what goes — and chats only ever go one at a time, when you pick them.
+          </T>
+          <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
+            <Icon name="lock" size={18} color={c.textMuted} />
+            <T v="bodySm" color="textMuted" style={{ flex: 1 }}>
+              Until then {therapistFirst} sees only their own sessions with {name}, and is told straight away if{' '}
+              {name}’s app switches to calm steps.
+            </T>
+          </View>
+          <Button title="Back" variant="outline" onPress={() => goBack('/parent/home')} />
+          <Button
+            title="See their sessions"
+            variant="text"
+            style={{ alignSelf: 'center' }}
+            onPress={() => router.replace('/parent/sessions')}
+          />
         </View>
       </Appear>
     </Screen>

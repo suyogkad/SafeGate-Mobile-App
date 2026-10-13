@@ -20,6 +20,7 @@ from app.routers import (
     children,
     companion,
     notes,
+    safety,
     schedules,
     sessions,
     therapist,
@@ -63,6 +64,7 @@ app.include_router(sessions.router)
 app.include_router(schedules.router)
 app.include_router(companion.router)
 app.include_router(notes.router)
+app.include_router(safety.router)
 app.include_router(therapists.router)
 app.include_router(therapist.router)
 

@@ -1,16 +1,20 @@
 /**
- * P09 Parent Home (tab root). A full-bleed hero (bell with the unread count + avatar top-right; the pill button opens
- * Find a therapist), "Needs you", "Updates" (the 3 newest notifications → View all), chips, the upcoming session
- * card, the "Today with Alex" timeline and quick-action tiles.
- * "Needs you" is live from the shared store: calm mode and "Let Jordan know" requests show up here. Calm, never red.
- * Urgent items stay in "Needs you" only, so nothing shows twice on Home.
+ * P09 Parent Home (tab root). A full-bleed hero (the bell and the child's avatar top-right;
+ * the pill button opens Find a therapist), "Needs you", "Updates", chips, the upcoming
+ * session, the "Today with <child>" timeline and quick-action tiles.
+ *
+ * "Needs you" answers the parent's first question, so it comes first. It is real: safety
+ * alerts about their own child, straight from the backend, and it says SEEN once the
+ * parent has said so. Calm, never red.
+ *
+ * Rows only appear for things that actually happened. Check-ins and the journal have no
+ * endpoint yet, so they are not in the timeline at all rather than showing a made-up mood.
  */
 import { router, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, View, type ImageSourcePropType } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { CheckinCard } from '@/components/CheckinCard';
 import { HeroBand } from '@/components/HeroBand';
-import { NotificationRow } from '@/components/NotificationRow';
 import { QuickTile, TileGrid } from '@/components/QuickTile';
 import { Screen } from '@/components/Screen';
 import { Timeline } from '@/components/Timeline';
@@ -25,94 +29,49 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
 import { FACES } from '@/data/faces';
-import { TODAY_WITH_ALEX } from '@/data/insights';
-import { mood as moodById } from '@/data/moods';
-import { greeting } from '@/lib/time';
-import { useApp, useChildName, useUnreadCount } from '@/store/app';
-import { artTints, gutter, moodColors, radius, space } from '@/theme/tokens';
+import { useChildAlerts, useChildChats, useFamilySessions, useMyChild } from '@/lib/family';
+import { localDateIso } from '@/lib/schedule';
+import { greeting, initialsOf, clockOf } from '@/lib/time';
+import { useApp } from '@/store/app';
+import { artTints, gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-type TodayItem = {
-  key: string;
-  caption: string;
-  label?: string;
-  title: string;
-  titleColor?: string;
-  href: Href;
-  face: ImageSourcePropType;
-  tint: string;
-};
+const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
 export default function ParentHome() {
   const { c } = useTheme();
-  const name = useChildName() || 'Alex';
   const account = useApp((s) => s.account);
   const parentFirstName = account?.name ? account.name.split(' ')[0] : 'there';
-  const calmMode = useApp((s) => s.calmMode);
-  const calmAt = useApp((s) => s.calmAt);
+
+  const child = useMyChild();
+  const name = child?.full_name || 'your child';
+  const { alerts, open } = useChildAlerts(child?.id);
+  const sessions = useFamilySessions();
+  const { turns } = useChildChats(child?.id);
+
+  // A child tapping "Let <parent> know" in Get help is still local: that child screen
+  // has no endpoint yet. Every other item here is real.
   const helpRequest = useApp((s) => s.helpRequest);
   const helpRequestAt = useApp((s) => s.helpRequestAt);
   const helpSeen = useApp((s) => s.helpSeen);
-  const session = useApp((s) => s.session);
-  const checkin = useApp((s) => s.checkin);
-  const messages = useApp((s) => s.messages);
-  const journal = useApp((s) => s.journal);
-  const notifications = useApp((s) => s.notifications);
-  const unread = useUnreadCount();
-  const updates = notifications.filter((n) => n.audience === 'parent' && !n.urgent).slice(0, 3);
 
-  // Today with Alex: live items from this session replace the matching demo ones.
-  const today: TodayItem[] = [];
-  if (calmMode !== 'off') {
-    today.push({
-      key: 'calm',
-      caption: `Today · ${calmAt ?? ''}`,
-      title: 'calm steps started',
-      href: '/parent/transcript?id=live',
-      face: FACES.calmHexagon,
-      tint: artTints.cyan,
-    });
-  }
-  const m = moodById(checkin ? checkin.mood : 'ok');
-  today.push({
-    key: 'checkin',
-    caption: `Today · ${checkin ? checkin.at : TODAY_WITH_ALEX[0].time}`,
-    label: 'Checked in',
-    title: m.label,
-    titleColor: moodColors[m.id].word,
-    href: '/parent/checkins',
-    face: m.face,
-    tint: moodColors[m.id].tint,
-  });
-  today.push({
-    key: 'chat',
-    caption: messages.length ? 'Today' : `Today · ${TODAY_WITH_ALEX[1].time}`,
-    label: 'Chatted with',
-    title: 'the AI companion',
-    href: messages.length ? '/parent/transcript?id=live' : '/parent/transcript?id=homework',
-    face: FACES.monocleWave,
-    tint: artTints.blue,
-  });
-  const lastJournal = journal[journal.length - 1];
-  today.push({
-    key: 'journal',
-    caption: lastJournal ? `Today · ${lastJournal.at}` : 'Yesterday',
-    label: 'Wrote in',
-    title: 'the journal',
-    href: lastJournal ? '/parent/transcript?id=live' : '/parent/transcript?id=smile',
-    face: FACES.smilePillPink,
-    tint: artTints.yellow,
-  });
+  const today = localDateIso(new Date());
+  const now = Date.now();
 
+  const nextSession = sessions
+    .filter((s) => s.status === 'booked' && new Date(s.start_time).getTime() > now)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+
+  // Needs you: alerts nobody has said they've seen, then ones already seen today.
   const needs: { key: string; href: Href; title: string; meta: string; tag: string; tone: BadgeTone }[] = [];
-  if (calmMode !== 'off') {
+  for (const a of alerts.filter((x) => !x.acknowledged_at || localDateIso(new Date(x.timestamp)) === today)) {
     needs.push({
-      key: 'calm',
-      href: '/parent/alert?kind=calm',
+      key: a.id,
+      href: `/parent/alert?id=${a.id}` as Href,
       title: `${name}'s app switched to calm steps`,
-      meta: `Today, ${calmAt ?? ''}`.trim(),
-      tag: calmMode === 'seen' ? 'SEEN' : 'NEEDS YOU',
-      tone: calmMode === 'seen' ? 'neutral' : 'warn',
+      meta: `${DAY.format(new Date(a.timestamp))}, ${clockOf(a.timestamp)}`,
+      tag: a.emergency_requested_at ? 'EMERGENCY ASKED' : a.acknowledged_at ? 'SEEN' : 'NEEDS YOU',
+      tone: a.acknowledged_at ? 'neutral' : 'warn',
     });
   }
   if (helpRequest) {
@@ -123,6 +82,58 @@ export default function ParentHome() {
       meta: `“${helpRequest}” · Today, ${helpRequestAt ?? ''}`.trim(),
       tag: helpSeen ? 'SEEN' : 'NEEDS YOU',
       tone: helpSeen ? 'neutral' : 'warn',
+    });
+  }
+  // The bell counts what genuinely needs the parent.
+  const unread = open.length + (helpRequest && !helpSeen ? 1 : 0);
+
+  // Updates: the quiet things, newest first. Nothing urgent appears here, so
+  // nothing shows twice on Home.
+  const updates: { key: string; title: string; meta: string; href: Href; icon: IconName }[] = [];
+  for (const s of sessions.filter((x) => x.notes_shared_at).slice(0, 3)) {
+    updates.push({
+      key: `notes-${s.id}`,
+      title: `${s.therapist_name ?? 'Your therapist'} shared notes`,
+      meta: `Session on ${DAY.format(new Date(s.start_time))}`,
+      href: `/parent/session-notes?id=${s.id}` as Href,
+      icon: 'file-text',
+    });
+  }
+  if (nextSession) {
+    updates.push({
+      key: `booked-${nextSession.id}`,
+      title: `Session booked with ${nextSession.therapist_name ?? 'your therapist'}`,
+      meta: `${DAY.format(new Date(nextSession.start_time))} · ${clockOf(nextSession.start_time)}`,
+      href: '/parent/sessions',
+      icon: 'calendar',
+    });
+  }
+  const shownUpdates = updates.slice(0, 3);
+
+  // Today with <child>: only what actually happened today.
+  const todaysTurns = turns.filter((t) => localDateIso(new Date(t.timestamp)) === today);
+  const todaysAlerts = alerts.filter((a) => localDateIso(new Date(a.timestamp)) === today);
+  const timeline: { key: string; caption: string; label?: string; title: string; href: Href; face: typeof FACES.calmHexagon; tint: string }[] = [];
+  for (const a of todaysAlerts) {
+    timeline.push({
+      key: `calm-${a.id}`,
+      caption: `Today · ${clockOf(a.timestamp)}`,
+      title: 'calm steps started',
+      href: `/parent/alert?id=${a.id}` as Href,
+      face: FACES.calmHexagon,
+      tint: artTints.cyan,
+    });
+  }
+  if (todaysTurns.length) {
+    const last = todaysTurns[todaysTurns.length - 1];
+    timeline.push({
+      key: 'chat',
+      caption: `Today · ${clockOf(last.timestamp)}`,
+      label: todaysTurns.length === 1 ? 'Chatted once with' : `Chatted ${todaysTurns.length} times with`,
+      title: 'the AI companion',
+      href: '/parent/chats',
+      face: FACES.monocleWave,
+      tint: artTints.blue,
     });
   }
 
@@ -137,18 +148,11 @@ export default function ParentHome() {
   const actions: { title: string; icon: IconName; href: Href }[] = [
     { title: 'Book a session', icon: 'plus-circle', href: '/parent/find-therapist' },
     { title: 'Read chats', icon: 'message-circle', href: '/parent/chats' },
-    { title: 'Share with Priya', icon: 'send', href: '/parent/share' },
+    { title: 'End their session', icon: 'power', href: '/parent/link-child' },
     { title: `${name}'s day`, icon: 'sun', href: '/parent/alexs-day' },
     { title: 'Comfort settings', icon: 'sliders', href: '/parent/child-comfort?from=home' },
     { title: 'Link code', icon: 'link', href: '/parent/link-child' },
   ];
-
-  const initials = session?.therapist
-    ? session.therapist
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-    : 'PS';
 
   return (
     <Screen inTabs padded={false} edgeToEdge>
@@ -157,7 +161,7 @@ export default function ParentHome() {
         topRight={
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Tappable
-              label={`Notifications, ${unread ? `${unread} new` : 'none new'}`}
+              label={`Notifications, ${unread ? `${unread} needing you` : 'nothing needing you'}`}
               onPress={() => router.push('/parent/notifications')}
               visualHeight={44}
             >
@@ -167,7 +171,7 @@ export default function ParentHome() {
               </View>
             </Tappable>
             <Tappable label={`${name}. Open account`} onPress={() => router.push('/parent/account')} visualHeight={44}>
-              <Avatar initials={name.charAt(0).toUpperCase()} size={44} />
+              <Avatar initials={initialsOf(name) || '?'} size={44} />
             </Tappable>
           </View>
         }
@@ -177,7 +181,7 @@ export default function ParentHome() {
             {greeting(parentFirstName)}
           </T>
           <T v="bodyLg" color="onBrand">
-            Here’s {name}’s day.
+            {child ? `Here’s ${name}’s day.` : 'Add your child to get started.'}
           </T>
         </View>
         <Button title="Find a therapist" size="small" icon="arrow-right" onPress={() => router.push('/parent/find-therapist')} />
@@ -230,8 +234,32 @@ export default function ParentHome() {
         <View style={{ gap: space.md }}>
           <SectionHeader title="Updates" action="View all" actionLabel="View all notifications" onAction={() => router.push('/parent/notifications')} />
           <Card tone="outlined" padding={space.lg} style={{ paddingVertical: space.xs }}>
-            {updates.length ? (
-              updates.map((n, i) => <NotificationRow key={n.id} n={n} childName={name} divider={i < updates.length - 1} />)
+            {shownUpdates.length ? (
+              shownUpdates.map((u, i) => (
+                <Tappable key={u.key} label={`${u.title}. ${u.meta}`} onPress={() => router.push(u.href)}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: space.md,
+                      paddingVertical: space.md,
+                      borderBottomWidth: i < shownUpdates.length - 1 ? 1 : 0,
+                      borderBottomColor: c.divider,
+                    }}
+                  >
+                    <View style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: c.surfaceTint, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name={u.icon} size={20} color={c.brand} />
+                    </View>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <T v="bodyLg">{u.title}</T>
+                      <T v="bodySm" color="textMuted">
+                        {u.meta}
+                      </T>
+                    </View>
+                    <Icon name="chevron-right" size={20} color={c.textMuted} />
+                  </View>
+                </Tappable>
+              ))
             ) : (
               <T v="bodyLg" color="textSecondary" style={{ paddingVertical: space.md }}>
                 Nothing new about {name}.
@@ -248,23 +276,23 @@ export default function ParentHome() {
 
         <View style={{ gap: space.md }}>
           <SectionHeader title="Coming up" />
-          {session ? (
+          {nextSession ? (
             <Card
               tone="outlined"
               padding={space.lg}
               onPress={() => router.push('/parent/sessions')}
-              label={`Session with ${session.therapist}, ${session.short}, ${session.time}. Open sessions`}
+              label={`Session with ${nextSession.therapist_name ?? 'your therapist'}, ${DAY.format(new Date(nextSession.start_time))}, ${clockOf(nextSession.start_time)}. Open sessions`}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xl }}>
-                <Avatar initials={initials} size={64} />
+                <Avatar initials={initialsOf(nextSession.therapist_name) || '?'} size={64} />
                 <View style={{ flex: 1, gap: space.xs }}>
                   <T v="heading">Upcoming session</T>
-                  <T v="section">{session.therapist}</T>
+                  <T v="section">{nextSession.therapist_name ?? 'Your therapist'}</T>
                   <T v="bodySm" color="textMuted">
-                    {session.short} · {session.time}
+                    {DAY.format(new Date(nextSession.start_time))} · {clockOf(nextSession.start_time)}
                   </T>
                   <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
-                    <Badge label={session.kind} />
+                    <Badge label={nextSession.meeting_kind === 'video' ? 'Video call' : 'In person'} />
                   </View>
                 </View>
               </View>
@@ -289,19 +317,26 @@ export default function ParentHome() {
 
         <View style={{ gap: space.md }}>
           <SectionHeader title={`Today with ${name}`} />
-          <Timeline>
-            {today.map((it) => (
-              <CheckinCard
-                key={it.key}
-                caption={it.caption}
-                label={it.label}
-                title={it.title}
-                titleColor={it.titleColor}
-                right={<FaceCircle face={it.face} tint={it.tint} size={72} />}
-                onPress={() => router.push(it.href)}
-              />
-            ))}
-          </Timeline>
+          {timeline.length ? (
+            <Timeline>
+              {timeline.map((it) => (
+                <CheckinCard
+                  key={it.key}
+                  caption={it.caption}
+                  label={it.label}
+                  title={it.title}
+                  right={<FaceCircle face={it.face} tint={it.tint} size={72} />}
+                  onPress={() => router.push(it.href)}
+                />
+              ))}
+            </Timeline>
+          ) : (
+            <Card tone="outlined" padding={space.lg}>
+              <T v="bodyLg" color="textSecondary">
+                Nothing from {name} today yet.
+              </T>
+            </Card>
+          )}
         </View>
 
         <View style={{ gap: space.md }}>

@@ -30,12 +30,23 @@ import {
 } from '../api/therapist';
 import type { SessionNotes } from '../data/practice';
 
-/** The signed-in therapist's profile and hours. `save` returns the error text to show, or null. */
-export function useMe() {
+/**
+ * The signed-in therapist's profile and hours. `save` returns the error text to show,
+ * or null.
+ *
+ * `enabled` is for screens both roles open: the parent's view of a therapist profile
+ * mounts this hook but must not call a therapist-only route, which would 403 every
+ * time the screen opened.
+ */
+export function useMe(enabled = true) {
   const [me, setMe] = useState<ApiTherapistMe | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
 
   const reload = useCallback(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     getMe()
       .then(setMe)
@@ -43,7 +54,7 @@ export function useMe() {
         /* offline or signed out: the screen shows its empty state */
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [enabled]);
   useEffect(reload, [reload]);
 
   const saveDetails = useCallback(async (draft: TherapistProfileDraft): Promise<string | null> => {

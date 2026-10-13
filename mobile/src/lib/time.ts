@@ -34,3 +34,16 @@ export function initialsOf(full: string | null | undefined): string {
   if (parts.length === 0) return '?';
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
+
+/**
+ * A timestamp as SafeGate writes times everywhere else: "4:00 pm", lower case.
+ *
+ * Intl's own formatter gives "4:00 PM" in some locales, which reads as shouting next
+ * to the rest of the app. One helper so every screen agrees.
+ */
+export function clockOf(when: string | number | Date): string {
+  const d = new Date(when);
+  const h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${h % 12 || 12}:${m} ${h < 12 ? 'am' : 'pm'}`;
+}

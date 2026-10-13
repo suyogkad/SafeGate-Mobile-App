@@ -1,10 +1,14 @@
 /**
- * P12 Book (+ P12b You're booked). Segmented This week | Next week, slot tiles (weekday, day number in a circle,
- * navy when picked, time below), how to meet, and a sticky "Book this time". The confirmation is a dialog.
- * Every therapist's times come from their own hours minus their bookings (Priya's are edited in My hours / Add a
- * time, so a change on the therapist's side shows here at once). Only the ways they offer show (Sam is video only).
- * No payment step (not in this product).
- * bookSession() updates Parent Home "Coming up", Sessions, the child's Home row 1 and My sessions.
+ * P12 Book (+ P12b You're booked). This week | Next week, slot tiles, how to meet, and a
+ * sticky "Book this time". The confirmation is a dialog. No payment step.
+ *
+ * The times are the therapist's real open slots. The backend has already taken out
+ * anything inside their notice period or beyond their booking window, so every time on
+ * this screen is genuinely bookable — and a time another family takes first disappears
+ * on the next load rather than failing at the last step.
+ *
+ * "How would you like to meet?" offers only what this therapist actually offers, and in
+ * person only when they have given a clinic address.
  */
 import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,101 +25,106 @@ import { Icon } from '@/components/ui/Icon';
 import { Segmented } from '@/components/ui/Segmented';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
+import { bookSession, type ApiSlot } from '@/api/family';
 import { ART } from '@/data/faces';
-import { type Slot } from '@/data/therapists';
-import { addDays, bookableSlots, dayCaps, dayLabel, dayShort, DEMO_TODAY, timeLabel, weekStart } from '@/lib/schedule';
-import { useApp, useAvailabilityOf, useBookings, useChildName, useTherapist } from '@/store/app';
+import { useMyChild, useOpenTimes, useTherapistProfile } from '@/lib/family';
+import { addDays, dayLabel, localDateIso, todayIso, weekStart } from '@/lib/schedule';
+import { firstName, initialsOf, clockOf } from '@/lib/time';
 import { radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 const WEEKS = ['This week', 'Next week'] as const;
+const DOW = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const MON = new Intl.DateTimeFormat(undefined, { month: 'short' });
 
-/**
- * Leave the booking flow for a parent tab. `replace` stays inside the app; `dismissTo` / `dismissAll` walk back
- * through the browser history on web, which can leave the app, reload the page and reset the demo.
- */
+/** Leave the booking flow for a parent tab, without walking back through web history. */
 function backToTab(tab: '/parent/home' | '/parent/sessions') {
   router.replace(tab);
 }
 
 export default function Book() {
   const { c } = useTheme();
-  const name = useChildName();
-  const t = useTherapist(useLocalSearchParams<{ id?: string }>().id ?? 'priya');
-  const availability = useAvailabilityOf(t.id);
-  const bookings = useBookings(t.id);
-
-  // "This week" is the coming Monday to Sunday (the demo day is a Sunday).
-  const weekSlots = (w: (typeof WEEKS)[number]): { main: Slot[]; more: Slot[] } => {
-    const monday = addDays(weekStart(addDays(DEMO_TODAY, 1)), w === 'This week' ? 0 : 7);
-    const all = bookableSlots(availability, bookings, monday, addDays(monday, 6)).map<Slot>((o) => ({
-      day: dayShort(o.date),
-      dateLabel: dayLabel(o.date),
-      short: dayCaps(o.date),
-      time: timeLabel(o.start),
-      joinOpens: timeLabel(o.start - 10),
-      kind: o.kind,
-    }));
-    return { main: all.slice(0, 3), more: all.slice(3) };
-  };
+  const params = useLocalSearchParams<{ id?: string }>();
+  const child = useMyChild();
+  const { therapist } = useTherapistProfile(params.id);
+  const { slots, loading, reload } = useOpenTimes(params.id);
 
   const [week, setWeek] = useState<(typeof WEEKS)[number]>('This week');
   const [more, setMore] = useState(false);
-  const [picked, setPicked] = useState<Slot | null>(() => weekSlots('This week').main[0] ?? null);
-  const [how, setHow] = useState<'Video call' | 'In person'>('Video call');
-  // What was booked, kept for the dialog: once booked, that time leaves the list of free times.
-  const [booked, setBooked] = useState<{ slot: Slot; meet: 'Video call' | 'In person' } | null>(null);
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [how, setHow] = useState<'video' | 'in_person'>('video');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [booked, setBooked] = useState<{ slot: ApiSlot; kind: 'video' | 'in_person' } | null>(null);
 
-  const set = weekSlots(week);
-  const slots = more ? [...set.main, ...set.more] : set.main;
-  // The picked time can disappear if the therapist changes their hours meanwhile: fall back to the first one.
-  const slot = picked && [...set.main, ...set.more].some((s) => s.short === picked.short && s.time === picked.time) ? picked : (slots[0] ?? null);
-  const place = t.clinic ? `${t.clinic.name} clinic, ${t.clinic.address}` : null;
-  const canVideo = availability.video && slot?.kind !== 'In person';
-  const canInPerson = !!t.clinic && availability.inPerson && slot?.kind !== 'Video call';
-  const meet: 'Video call' | 'In person' = how === 'In person' ? (canInPerson ? 'In person' : 'Video call') : canVideo ? 'Video call' : 'In person';
+  const name = child?.full_name || 'your child';
+  const who = therapist?.full_name ?? 'your therapist';
+  const whoFirst = firstName(who) || 'they';
 
-  const book = () => {
-    if (!slot) return;
-    useApp.getState().bookSession({
-      therapist: t.name,
-      therapistFirst: t.first,
-      role: t.role.toLowerCase(),
-      dateLabel: slot.dateLabel,
-      short: slot.short,
-      time: slot.time,
-      kind: meet,
-      place: meet === 'In person' ? place : null,
-      joinOpens: slot.joinOpens,
-    });
-    setBooked({ slot, meet });
+  // "This week" is the Monday to Sunday the next bookable day falls in.
+  const monday = addDays(weekStart(addDays(todayIso(), 1)), week === 'This week' ? 0 : 7);
+  const sunday = addDays(monday, 6);
+  const inWeek = slots.filter((s) => {
+    const d = localDateIso(new Date(s.start_time));
+    return d >= monday && d <= sunday;
+  });
+  const shown = more ? inWeek : inWeek.slice(0, 3);
+  const slot = inWeek.find((s) => s.id === pickedId) ?? inWeek[0] ?? null;
+
+  const canVideo = !!therapist?.offers_video;
+  const canInPerson = !!therapist?.offers_in_person && !!therapist?.clinic;
+  const meet: 'video' | 'in_person' = how === 'in_person' && canInPerson ? 'in_person' : canVideo ? 'video' : 'in_person';
+  const place = therapist?.clinic ? `${therapist.clinic.name} clinic, ${therapist.clinic.address}` : null;
+
+  const book = async () => {
+    if (!slot || !child) {
+      setError(child ? 'Pick a time first.' : 'Add your child before booking.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await bookSession(child.id, slot.id, meet);
+      setBooked({ slot, kind: meet });
+      setError(null);
+    } catch (e) {
+      // Most likely someone else took the time first; reload so the list is honest.
+      setError(e instanceof Error ? e.message : 'Could not book that time.');
+      reload();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Screen
       backdrop="brand"
-      header={<Header title={`Book with ${t.first}`} getHelp={false} fallback={`/parent/therapist?id=${t.id}`} />}
+      header={<Header title={`Book with ${whoFirst}`} getHelp={false} fallback={`/parent/therapist?id=${params.id ?? ''}`} />}
       footer={
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <Icon name="calendar" size={16} color={c.textMuted} />
             <T v="bodySm" color="textSecondary" style={{ flex: 1 }} accessibilityLiveRegion="polite">
-              {slot ? `${slot.dateLabel}, ${slot.time} · ${meet}` : 'Pick a time'}
+              {error ??
+                (slot
+                  ? `${dayLabel(localDateIso(new Date(slot.start_time)))}, ${clockOf(slot.start_time)} · ${meet === 'video' ? 'Video call' : 'In person'}`
+                  : 'Pick a time')}
             </T>
           </View>
-          <Button title="Book this time" icon="arrow-right" disabled={!slot} onPress={book} />
+          <Button title="Book this time" icon="arrow-right" disabled={!slot || busy} onPress={book} />
         </View>
       }
     >
       <Appear>
         <Card tone="raised" r={24} padding={space.lg}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-            <Avatar initials={t.initials} size={52} />
+            <Avatar initials={initialsOf(who) || '?'} size={52} />
             <View style={{ flex: 1 }}>
-              <T v="section">{t.name}</T>
-              <T v="bodySm" color="textMuted">
-                {t.role}
-              </T>
+              <T v="section">{who}</T>
+              {therapist?.title ? (
+                <T v="bodySm" color="textMuted">
+                  {therapist.title}
+                </T>
+              ) : null}
             </View>
           </View>
         </Card>
@@ -128,7 +137,7 @@ export default function Book() {
         onChange={(w) => {
           setWeek(w);
           setMore(false);
-          setPicked(weekSlots(w).main[0] ?? null);
+          setPickedId(null);
         }}
       />
 
@@ -136,29 +145,40 @@ export default function Book() {
         <T v="section" header>
           Pick a time
         </T>
-        {slots.length ? (
+        {shown.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-            {slots.map((s) => (
-              <SlotTile key={s.short + s.time} slot={s} selected={!!slot && s.short === slot.short && s.time === slot.time} onPress={() => setPicked(s)} />
+            {shown.map((s) => (
+              <SlotTile key={s.id} slot={s} selected={slot?.id === s.id} onPress={() => setPickedId(s.id)} />
             ))}
           </View>
         ) : (
           <Card tone="raised" r={24} padding={space.lg}>
             <T v="body" color="textSecondary">
-              {t.first} has no free times {week === 'This week' ? 'this week' : 'next week'}. {week === 'This week' ? 'Try next week.' : 'Try this week.'}
+              {loading
+                ? 'Looking for free times…'
+                : `${whoFirst} has no free times ${week === 'This week' ? 'this week' : 'next week'}. ${week === 'This week' ? 'Try next week.' : 'Try this week.'}`}
             </T>
           </Card>
         )}
-        {!more && set.more.length ? <Button title="More times" variant="text" iconLeft="plus" onPress={() => setMore(true)} /> : null}
+        {!more && inWeek.length > 3 ? <Button title="More times" variant="text" iconLeft="plus" onPress={() => setMore(true)} /> : null}
       </View>
 
-      <View style={{ gap: space.md }}>
-        <T v="section" header>
-          How would you like to meet?
-        </T>
-        {canVideo ? <OptionRow label="Video call" emoji="📹" selected={meet === 'Video call'} onPress={() => setHow('Video call')} /> : null}
-        {canInPerson && t.clinic ? <OptionRow label={`In person in ${t.clinic.name}`} emoji="🏥" selected={meet === 'In person'} onPress={() => setHow('In person')} /> : null}
-      </View>
+      {canVideo || canInPerson ? (
+        <View style={{ gap: space.md }}>
+          <T v="section" header>
+            How would you like to meet?
+          </T>
+          {canVideo ? <OptionRow label="Video call" emoji="📹" selected={meet === 'video'} onPress={() => setHow('video')} /> : null}
+          {canInPerson && therapist?.clinic ? (
+            <OptionRow
+              label={`In person in ${therapist.clinic.name}`}
+              emoji="🏥"
+              selected={meet === 'in_person'}
+              onPress={() => setHow('in_person')}
+            />
+          ) : null}
+        </View>
+      ) : null}
 
       <Card tone="tint" padding={space.lg}>
         <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
@@ -169,7 +189,7 @@ export default function Book() {
         </View>
       </Card>
 
-      {/* P12b You're booked — confirmation dialog */}
+      {/* P12b You're booked */}
       <Dialog
         visible={!!booked}
         onClose={() => setBooked(null)}
@@ -177,7 +197,8 @@ export default function Book() {
         art={<Image source={ART.cheer} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no" style={{ width: 108, height: 108 }} />}
       >
         <T v="bodyLg" center>
-          {booked?.slot.dateLabel}, {booked?.slot.time} with {t.name}. {booked?.meet === 'In person' ? `In person at ${place}.` : 'Video call.'}
+          {booked ? `${dayLabel(localDateIso(new Date(booked.slot.start_time)))}, ${clockOf(booked.slot.start_time)}` : ''} with {who}.{' '}
+          {booked?.kind === 'in_person' ? `In person at ${place}.` : 'Video call.'}
         </T>
         <T v="body" color="textSecondary" center>
           {name} will see it on their phone.
@@ -203,12 +224,12 @@ export default function Book() {
 }
 
 /** A date circle as a slot: weekday, day number in a circle (navy when picked), time below. */
-function SlotTile({ slot, selected, onPress }: { slot: Slot; selected: boolean; onPress: () => void }) {
+function SlotTile({ slot, selected, onPress }: { slot: ApiSlot; selected: boolean; onPress: () => void }) {
   const { c } = useTheme();
-  const [dow, num, mon] = slot.short.split(' ');
+  const at = new Date(slot.start_time);
   return (
     <Tappable
-      label={`${slot.dateLabel}, ${slot.time}`}
+      label={`${dayLabel(localDateIso(at))}, ${clockOf(at)}`}
       role="radio"
       checked={selected}
       selected={selected}
@@ -226,15 +247,15 @@ function SlotTile({ slot, selected, onPress }: { slot: Slot; selected: boolean; 
       }}
     >
       <T v="caption" color={selected ? 'textSecondary' : 'textMuted'}>
-        {dow} · {mon}
+        {DOW.format(at)} · {MON.format(at)}
       </T>
       <View style={{ width: 44, height: 44, borderRadius: radius.pill, backgroundColor: selected ? c.brand : c.surface, alignItems: 'center', justifyContent: 'center' }}>
         <T v="heading" tint={selected ? c.onBrand : c.text}>
-          {num}
+          {at.getDate()}
         </T>
       </View>
       <T v="bodySmMedium" color={selected ? 'brand' : 'text'}>
-        {slot.time}
+        {clockOf(at)}
       </T>
     </Tappable>
   );

@@ -509,7 +509,7 @@ This is the heart of the product.
        ("If things get hard again, you can call someone." + Call Kids Helpline + Get help + "SafeGate is not an emergency service.")
 ```
 
-- The child's truthful line comes from `calmLead(calmMode, emergency)` in `src/lib/calmLead.ts`. Emergency wins over seen, seen over active. **It never promises a time.**
+- The child's truthful line comes from `calmLeadFor(state)` in `src/lib/calmLead.ts`, which now takes the server's calm state; `calmLead(calmMode, emergency)` delegates to it for the child app's local state, so there is still exactly one place the words are written. Emergency wins over seen, seen over active. **It never promises a time.**
 - The parent's Alert "What Alex sees now" quotes the exact same `calmLead()` line, so the two sides can never disagree.
 - Calm mode has **no back, no close, no tab bar**; Get help stays. It shows the Feet on the floor steps one per card, "Read to me", then the call-someone card and the emergency note. No characters, emoji, chips, red or timers.
 - In calm mode the AI is off: the Talk conversation is cut at the moment calm mode started, and the parent's transcript shows a divider "Calm steps started here · <time>" with "Concern: High" and **nothing from the AI after it**.
@@ -517,12 +517,19 @@ This is the heart of the product.
 - **Variant C28 (emergency order):** the same screen with "If you are in danger right now" + Call 000 and the helplines first, steps after (`/calm-mode?order=emergency`, also used automatically once emergency services were requested).
 - **Help request (not calm mode):** a help topic's *Let Jordan know* → `requestHelp(topic)` → parent Home "Needs you" shows it → Alert (help-request version) → *I've seen this* (`ackHelp`).
 
-**Backend responsibilities here** (the most important integration):
-1. The safety engine classifies each child message **before** the AI is called and returns a mode (normal / calm / emergency order). The app must switch as soon as it receives it.
-2. Calm-mode state (`active` / `seen`, `calmAt`, `emergency {by, at}`) lives on the server and is pushed live to both the child device and the parent device (websocket or push + fetch).
-3. The parent Alert needs: time, a concern level (**parent only**), a plain "what happened" line, the conversation up to the divider, who else was told (the therapist) and when.
-4. *I've seen this* and *Contact emergency services* are server actions that record who and when, and update the child's line.
-5. The child's calm-mode state must survive an app restart on the child's device (it's one of the few things stored locally).
+**Backend responsibilities here** (the most important integration). Built on 13 Oct 2026:
+1. **Done.** The safety engine classifies each child message before the AI is called; `POST /companion/reply` returns the risk and Talk switches on it.
+2. **Done, by fetch not push.** Calm state lives on the server and the child's app reads `GET /companion/calm-state`, which returns only `active` / `seen_by_grown_up` / `emergency_requested` / `started_at`. **Its response has no field for a level, a score or anything the classifier said** (rule 5). Live push is still to come: today the app asks.
+3. **Done.** `GET /children/{id}/alerts` gives the parent the time, the concern level (parent only), a plain "what happened" line and who else was told. The conversation is a separate, deliberate step (`GET /children/{id}/conversations`).
+4. **Done.** *I've seen this* (`POST .../acknowledge`) and *Contact emergency services* (`POST .../emergency-services`) record who and when, and change the child's line. **SafeGate still contacts nobody.**
+5. Still the child app's own job: the calm screen survives a restart from local state, and asks the server which line to show.
+
+**Who may make the child's line say "seen".** Only the child's **own parent**
+(`alerts.seen_by_parent_at`). An admin clearing the ops alerts inbox sets a separate
+`acknowledged_at` and changes nothing the child sees and nothing the therapist is told
+about the family -- an admin is not someone who looks after that child. This was a real
+bug: before the split, an admin working through their queue made a child's screen claim
+a grown-up who looks after them had seen it.
 
 ---
 
@@ -899,15 +906,15 @@ Copies parent Account: "PRACTITIONER" panel with Priya's photo (no character), Y
 | Sign in / Create account | Accept anything (prefilled). | Real auth. The child never gets an email or password. |
 | Speak / Is this right? | Records nothing; always "hears" the same sentence. | Speech-to-text (push-to-talk only). |
 | Read to me | `expo-speech` on device (en-AU). | Can stay on device, or a TTS server. |
-| Booking and availability | Worked out on the device from each therapist's hours (`src/lib/schedule.ts`); Sam's and Mei's hours are fixed; no payment. | The availability + booking service (time zones, double-booking protection); keep the rules: notice, booking window, time off, one way of meeting per time. |
-| Notifications | Made in the store by the actions; seeded history; no real push. | Notification service + push, following rule 20 and the Alerts settings. |
+| Booking and availability | **Real (13 Oct 2026).** Every open time comes from the therapist's own hours on the server, already filtered by their notice period and booking window; booking writes a session with its way of meeting. Still no payment. | — |
+| Notifications | Worked out on both sides from real data (alerts, notes shared, bookings, notes due). No push, and no notifications service. | A notification service + push, following rule 20. |
 | Therapist area | **Built against the backend (8 Oct 2026).** Real sign-in, caseload, calendar, hours, profile, goals, sessions, notes (rule 21) and alerts. Still missing an endpoint: what a family has *shared* (rule 19), and messaging. | Sharing permissions per family; messaging if it's added later. |
 | Therapist notifications | Worked out from alerts, sessions needing notes and bookings. | A notification service + push, following rule 20. |
 | Session "Join" | **Real.** A per-participant link from the backend, only inside the session's own window. In-person sessions have no room and say so. | — |
 | Read the conversation (therapist) | **Removed.** The backend gives a child's chats to the **parent only**; a therapist reads one only if the family shares it (rule 19). The Alert screen says so instead. | Sharing permissions per family. |
-| Share with Priya, Send Priya a note, Message Priya / Jordan | Share is a local flag that the therapist area reads; messages are demo alerts (no messaging in the MVP). | Sharing permissions per family; messaging if it's added later. |
-| Contact emergency services | Records who/when locally. | Whatever the real escalation process is; always behind the confirm. |
-| Insights, check-in charts, summaries | Static. | Aggregates; AI summaries must follow rule 2 and stay parent-only. |
+| Share with your therapist, Send them a note, Message them | **Share says it isn't ready** rather than setting a flag: telling a parent their child's week went to their therapist when it did not is worse than "not yet". Messages are still demo alerts. | Sharing permissions per family (rule 19); messaging if it's added later. |
+| Contact emergency services | **Records who/when on the server** (`alerts.emergency_requested_at/by`), and the child's line changes. **Still contacts nobody.** | Whatever the real escalation process is; always behind the confirm. |
+| Insights, check-in charts, summaries | **Empty, and they say so.** Nothing a child feels is recorded anywhere yet, so these screens show no chart rather than an invented week. | Check-ins (the child app writes, the parent reads), then aggregates; AI summaries must follow rule 2 and stay parent-only. |
 | Help topics, calm steps, journal prompts | Placeholder wording, 12 `TODO(safegate)` markers. | Reviewed content. For this MVP the owner accepts the placeholders as is. |
 
 **Things that must stay true after integration:** rules 5, 9, 11, 12 and 16 in section 3 depend on the backend. In short: never send risk levels to the child; decide calm mode on the server; never auto-notify the parent for "Someone is hurting me"; make the child's calm-screen line reflect real parent actions without promising a time; serve only verified, dated help numbers.

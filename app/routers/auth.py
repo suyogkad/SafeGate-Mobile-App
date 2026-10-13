@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import User, UserRole
 from app.db.session import get_db
-from app.schemas import Token, UserOut, UserRegister
+from app.schemas import ParentNotifyPrefs, Token, UserOut, UserRegister
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -63,3 +63,27 @@ async def login(
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.get("/me/notify", response_model=ParentNotifyPrefs)
+async def read_notify(current_user: User = Depends(get_current_user)) -> ParentNotifyPrefs:
+    return ParentNotifyPrefs(
+        sessions=current_user.notify_sessions,
+        each_activity=current_user.notify_each_activity,
+        digest=current_user.notify_digest,
+    )
+
+
+@router.put("/me/notify", response_model=ParentNotifyPrefs)
+async def update_notify(
+    payload: ParentNotifyPrefs,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ParentNotifyPrefs:
+    """What this account wants to hear about. Safety alerts are not among these: an
+    alert about a child always reaches their parent and their therapist."""
+    current_user.notify_sessions = payload.sessions
+    current_user.notify_each_activity = payload.each_activity
+    current_user.notify_digest = payload.digest
+    await db.commit()
+    return payload

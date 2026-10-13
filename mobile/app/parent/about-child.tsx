@@ -1,7 +1,14 @@
 /**
  * P02–P06 About your child, steps 1–5. One question per screen: a labelled text field, chips, option rows or a
  * multi-select tile grid, setup phases, sticky Next.
- * Answers go to `child` in the store; the name from step 1 is used everywhere.
+ * The name from step 1 is what SafeGate calls the child everywhere, and it is sent to
+ * the backend when the child record is created (Link their phone).
+ *
+ * The other four answers stay on this phone. They describe a child's difficulties and
+ * how they communicate, so storing them is a data-collection decision for the privacy
+ * review, not something to slip in: SafeGate collects the minimum child data it needs.
+ * The last step says so, rather than letting a parent think their therapist will read
+ * them.
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { View } from 'react-native';
@@ -114,6 +121,12 @@ export default function AboutChild() {
             <OptionRow key={o} label={o} multi selected={child.communicate.includes(o)} onPress={() => update({ communicate: toggle(useApp.getState().child.communicate, o) })} />
           ))}
           </Stagger>
+          <Card tone="raised" padding={space.lg}>
+            <T v="bodySm" color="textSecondary">
+              Your answers set up {name}’s app on this phone. They aren’t sent to SafeGate or shown to a therapist
+              yet — you can tell your therapist anything you want them to know.
+            </T>
+          </Card>
         </View>
       ) : null}
     </SetupShell>

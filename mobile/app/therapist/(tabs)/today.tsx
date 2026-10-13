@@ -26,7 +26,7 @@ import { Tappable } from '@/components/ui/Tappable';
 import { dayLabel, dayShort, localDateIso, localStartMinutes, timeLabel } from '@/lib/schedule';
 import { useClients, useMyOpenTimes, useTherapistAlerts, useTherapistSessions } from '@/lib/clients';
 import { noteAlert } from '@/api/therapist';
-import { firstName, greeting, initialsOf, longDate, partOfDay } from '@/lib/time';
+import { firstName, greeting, initialsOf, longDate, partOfDay, clockOf } from '@/lib/time';
 import { useApp } from '@/store/app';
 import { gutter, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';

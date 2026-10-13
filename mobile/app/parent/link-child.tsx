@@ -1,6 +1,10 @@
 /**
- * P08 Link Alex's phone. A navy code card (character peeking in), numbered "How to link" rows, setup shell.
- * "Waiting for Alex's phone…" is still text: no spinner. The demo doesn't wait for the child.
+ * P08 Link their phone. A navy code card (character peeking in), numbered "How to link"
+ * rows, setup shell. The code is short-lived and single-use, read out by the parent.
+ *
+ * The child's name here is the real one from their record, or what the parent typed in
+ * setup. It is never a stand-in: a code card addressed to the wrong name is the first
+ * thing a parent would notice, and the child whose phone this is would notice too.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { router } from 'expo-router';
@@ -15,17 +19,23 @@ import { FACES } from '@/data/faces';
 import { createChild } from '@/api/children';
 import { OfflineError } from '@/lib/api';
 import { linkCodeFor } from '@/lib/auth';
-import { useApp, useChildName } from '@/store/app';
+import { useMyChild } from '@/lib/family';
+import { useApp } from '@/store/app';
 import { artTints, fonts, radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
+const needsName = 'Tell us what to call your child first.';
+
 export default function LinkChild() {
   const { c } = useTheme();
-  const name = useChildName() || 'Child';
   const [copied, setCopied] = useState(false);
-  const childId = useApp((s) => s.childId);
   const account = useApp((s) => s.account);
   const childProfile = useApp((s) => s.child);
+  const child = useMyChild();
+  const storedChildId = useApp((st) => st.childId);
+  const childId = child?.id ?? storedChildId;
+  const typedName = (childProfile.name || '').trim();
+  const name = child?.full_name || typedName || 'your child';
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,10 +48,12 @@ export default function LinkChild() {
     try {
       let activeChildId = childId;
       if (!activeChildId) {
-        const childName = (childProfile.name || '').trim() || 'Alex';
-        const created = await createChild({
-          full_name: childName,
-        });
+        if (!typedName) {
+          // Nothing to call them yet: ask rather than invent a name on their record.
+          setError(needsName);
+          return;
+        }
+        const created = await createChild({ full_name: typedName });
         activeChildId = created.id;
         useApp.getState().setChildId(created.id);
         useApp.getState().updateChild({ name: created.full_name });
@@ -56,7 +68,7 @@ export default function LinkChild() {
     } finally {
       setBusy(false);
     }
-  }, [childId, childProfile.name, account?.name]);
+  }, [childId, typedName, account?.name]);
 
   useEffect(() => {
     void fetchCode();
@@ -133,10 +145,18 @@ export default function LinkChild() {
       </View>
 
       {error ? (
-        <View accessibilityLiveRegion="polite">
+        <View accessibilityLiveRegion="polite" style={{ gap: space.md }}>
           <T v="body" color="textSecondary">
             {error}
           </T>
+          {error === needsName ? (
+            <Button
+              title="Tell us about your child"
+              variant="outline"
+              icon="arrow-right"
+              onPress={() => router.push('/parent/about-child?step=1')}
+            />
+          ) : null}
         </View>
       ) : null}
 

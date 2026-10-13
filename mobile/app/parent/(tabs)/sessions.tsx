@@ -1,7 +1,15 @@
 /**
- * P13 Sessions (tab root). A navy "Next session" summary, then session cards (initials, date, kind badge) under a
- * segmented Upcoming | Past. The booked session comes from the store (Book changes it everywhere). Past sessions
- * show whether the therapist has shared notes yet (NOTES COMING → NOTES SHARED, live from Write notes).
+ * P13 Sessions (tab root). A navy "Next session" summary, then session cards under a
+ * segmented Upcoming | Past.
+ *
+ * All real. A past session says where its notes are — NOTES COMING until the therapist
+ * shares them, then NOTES SHARED and the card opens them. The parent is never told that
+ * a draft exists: whether the therapist has started writing is their own business, and
+ * the backend does not tell a family either way.
+ *
+ * A video session also offers Join, but only inside its own window: the link is issued
+ * per participant by the backend and refused outside it, so the button follows that
+ * rather than pretending.
  */
 import { useState } from 'react';
 import { router, type Href } from 'expo-router';
@@ -13,58 +21,72 @@ import { Avatar } from '@/components/ui/bits';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Dialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { Segmented } from '@/components/ui/Segmented';
 import { T } from '@/components/ui/T';
 import { Tappable } from '@/components/ui/Tappable';
+import { cancelSession, type ApiSession } from '@/api/family';
 import { FACES } from '@/data/faces';
-import { ALEX_PAST } from '@/data/practice';
-import { LATER_SESSION } from '@/data/sessions';
-import { dayLabel, timeLabel } from '@/lib/schedule';
-import { useApp } from '@/store/app';
+import { useFamilySessions, useMyChild } from '@/lib/family';
+import { dayLabel, localDateIso } from '@/lib/schedule';
+import { firstName, initialsOf, clockOf } from '@/lib/time';
+import { callIsOpen, joinCall, JOIN_EARLY_MINUTES } from '@/lib/video';
 import { radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 const TABS = ['Upcoming', 'Past'] as const;
+const SHORT = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
 /** "Thursday 15 October" → "Thursday, 15 October" */
 const withComma = (d: string) => d.replace(/^(\w+) /, '$1, ');
 
-type Row = { key: string; date: string; tag: string; tone: BadgeTone; time: string; title: string; line: string; href?: Href; initials: string };
+/** When the join link opens, in the parent's own words. */
+const opensAt = (startTime: string) =>
+  clockOf(new Date(startTime).getTime() - JOIN_EARLY_MINUTES * 60_000);
 
 export default function Sessions() {
   const { c } = useTheme();
   const [tab, setTab] = useState<(typeof TABS)[number]>('Upcoming');
-  const s = useApp((st) => st.session);
-  const notes = useApp((st) => st.sessionNotes);
-  const initials = s?.therapist
-    ? s.therapist
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-    : 'PS';
+  const child = useMyChild();
+  const sessions = useFamilySessions();
+  const [list, setList] = useState<ApiSession[] | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<ApiSession | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const upcoming: Row[] = s
-    ? [
-        {
-          key: 'booked',
-          date: withComma(s.dateLabel),
-          tag: s.kind.toUpperCase(),
-          tone: 'info',
-          time: s.time,
-          title: `With ${s.therapist}, ${s.role}`,
-          line: s.kind === 'Video call' ? `The join link opens at ${s.joinOpens}.` : s.place ?? '',
-          initials,
-        },
-      ]
-    : [];
-
-  const past: Row[] = [];
+  const all = list ?? sessions;
+  const now = Date.now();
+  const upcoming = all
+    .filter((s) => s.status === 'booked' && new Date(s.start_time).getTime() > now)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const past = all
+    .filter((s) => !upcoming.includes(s))
+    .sort((a, b) => b.start_time.localeCompare(a.start_time));
   const rows = tab === 'Upcoming' ? upcoming : past;
+  const next = upcoming[0];
+
+  const join = async (s: ApiSession) => {
+    setError(await joinCall(s.id));
+  };
+
+  const doCancel = async () => {
+    if (!confirmCancel) return;
+    setBusy(true);
+    try {
+      const updated = await cancelSession(confirmCancel.id);
+      setList(all.map((s) => (s.id === updated.id ? updated : s)));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not cancel that session.');
+    } finally {
+      setBusy(false);
+      setConfirmCancel(null);
+    }
+  };
 
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Sessions" left="none" getHelp={false} />}>
-      {/* Next session — navy panel */}
       <Appear>
         <View style={{ backgroundColor: c.brand, borderRadius: radius.panel, padding: space.xl, overflow: 'hidden', gap: space.md }}>
           <Image
@@ -77,13 +99,13 @@ export default function Sessions() {
           <T v="caption" color="onBrand" style={{ opacity: 0.85 }}>
             NEXT SESSION
           </T>
-          {s ? (
+          {next ? (
             <View style={{ gap: 2, paddingRight: 80 }}>
               <T v="title" color="onBrand">
-                {s.short.split(' ').map((w) => w[0] + w.slice(1).toLowerCase()).join(' ')} · {s.time}
+                {SHORT.format(new Date(next.start_time))} · {clockOf(next.start_time)}
               </T>
               <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-                {s.therapist} · {s.kind}
+                {next.therapist_name ?? 'Your therapist'} · {next.meeting_kind === 'video' ? 'Video call' : 'In person'}
               </T>
             </View>
           ) : (
@@ -92,12 +114,12 @@ export default function Sessions() {
                 No session booked yet
               </T>
               <T v="bodyLg" color="onBrand" style={{ opacity: 0.9 }}>
-                Find a practitioner to book your first therapy session.
+                Find a practitioner to book your first session.
               </T>
             </View>
           )}
           <Button
-            title={s ? 'Book another' : 'Book a session'}
+            title={next ? 'Book another' : 'Book a session'}
             size="small"
             variant="onBrand"
             iconLeft="plus"
@@ -108,38 +130,88 @@ export default function Sessions() {
 
       <Segmented label="Sessions" options={TABS} value={tab} onChange={setTab} />
 
+      {error ? (
+        <T v="bodySm" color="onWarnTint" accessibilityLiveRegion="polite">
+          {error}
+        </T>
+      ) : null}
+
       <View style={{ gap: space.md }} key={tab}>
         {rows.length > 0 ? (
           <Stagger>
-            {rows.map((r) => {
+            {rows.map((s) => {
+              const at = new Date(s.start_time);
+              const date = withComma(dayLabel(localDateIso(at)));
+              const video = s.meeting_kind === 'video';
+              const notes = s.notes_shared_at
+                ? { tag: 'NOTES SHARED', tone: 'success' as BadgeTone }
+                : { tag: 'NOTES COMING', tone: 'neutral' as BadgeTone };
+              const upcomingRow = tab === 'Upcoming';
+              const cancelled = s.status === 'cancelled';
+              const tag = cancelled ? 'CANCELLED' : upcomingRow ? (video ? 'VIDEO CALL' : 'IN PERSON') : notes.tag;
+              const tone: BadgeTone = cancelled ? 'neutral' : upcomingRow ? 'info' : notes.tone;
+              const who = s.therapist_name ?? 'your therapist';
+              const line = cancelled
+                ? 'This session was cancelled.'
+                : upcomingRow
+                  ? video
+                    ? `The join link opens at ${opensAt(s.start_time)}.`
+                    : 'In person'
+                  : s.notes_shared_at
+                    ? `${firstName(who)} shared notes from this session.`
+                    : `${firstName(who)} will share notes here.`;
+              const openNotes = !upcomingRow && !!s.notes_shared_at;
+
               const body = (
-                <View style={{ flexDirection: 'row', gap: space.lg }}>
-                  <Avatar initials={r.initials} size={52} />
-                  <View style={{ flex: 1, gap: space.xs }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
-                      <Badge label={r.tag} tone={r.tone} />
-                      <T v="caption" color="textMuted">
-                        {r.time}
+                <View style={{ gap: space.md }}>
+                  <View style={{ flexDirection: 'row', gap: space.lg }}>
+                    <Avatar initials={initialsOf(who) || '?'} size={52} />
+                    <View style={{ flex: 1, gap: space.xs }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
+                        <Badge label={tag} tone={tone} />
+                        <T v="caption" color="textMuted">
+                          {clockOf(at)}
+                        </T>
+                      </View>
+                      <T v="section">{date}</T>
+                      <T v="bodySm" color="textSecondary">
+                        With {who}
+                      </T>
+                      <T v="bodySm" color="textMuted">
+                        {line}
                       </T>
                     </View>
-                    <T v="section">{r.date}</T>
-                    <T v="bodySm" color="textSecondary">
-                      {r.title}
-                    </T>
-                    <T v="bodySm" color="textMuted">
-                      {r.line}
-                    </T>
+                    {openNotes ? <Icon name="chevron-right" size={20} color={c.textMuted} /> : null}
                   </View>
-                  {r.href ? <Icon name="chevron-right" size={20} color={c.textMuted} /> : null}
+                  {upcomingRow && !cancelled ? (
+                    <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+                      {video ? (
+                        <Button
+                          title="Join video call"
+                          size="small"
+                          iconLeft="video"
+                          disabled={!callIsOpen(s.start_time, s.end_time)}
+                          onPress={() => join(s)}
+                        />
+                      ) : null}
+                      <Button title="Cancel session" size="small" variant="outline" onPress={() => setConfirmCancel(s)} />
+                    </View>
+                  ) : null}
                 </View>
               );
+
               const style = { backgroundColor: c.bg, borderRadius: radius.panel, padding: space.lg, ...shadow.lift };
-              return r.href ? (
-                <Tappable key={r.key} label={`${r.date}, ${r.time}. ${r.title}. Open notes`} onPress={() => router.push(r.href!)} style={style}>
+              return openNotes ? (
+                <Tappable
+                  key={s.id}
+                  label={`${date}, ${clockOf(at)}. With ${who}. Open notes`}
+                  onPress={() => router.push(`/parent/session-notes?id=${s.id}` as Href)}
+                  style={style}
+                >
                   {body}
                 </Tappable>
               ) : (
-                <View key={r.key} style={style}>
+                <View key={s.id} style={style}>
                   {body}
                 </View>
               );
@@ -155,8 +227,8 @@ export default function Sessions() {
             </T>
             <T v="bodySm" color="textMuted" center>
               {tab === 'Upcoming'
-                ? 'Your booked therapy sessions will appear here.'
-                : 'Session notes and past summaries will show up after completed sessions.'}
+                ? 'Your booked sessions will appear here.'
+                : 'Past sessions and the notes your therapist shares will show here.'}
             </T>
             {tab === 'Upcoming' ? (
               <Button title="Find a therapist" icon="arrow-right" onPress={() => router.push('/parent/find-therapist')} />
@@ -164,6 +236,24 @@ export default function Sessions() {
           </Card>
         )}
       </View>
+
+      <Dialog
+        visible={!!confirmCancel}
+        onClose={() => setConfirmCancel(null)}
+        title="Cancel this session?"
+      >
+        <T v="body" color="textSecondary" center>
+          {confirmCancel
+            ? `${withComma(dayLabel(localDateIso(new Date(confirmCancel.start_time))))}, ${clockOf(confirmCancel.start_time)} with ${confirmCancel.therapist_name ?? 'your therapist'}.`
+            : ''}
+        </T>
+        <T v="bodySm" color="textMuted" center>
+          {child?.full_name ?? 'Your child'} will see it come off their phone. The time goes back to your
+          therapist, so you can book another.
+        </T>
+        <Button title="Yes, cancel it" disabled={busy} onPress={doCancel} />
+        <Button title="Keep the session" variant="outline" onPress={() => setConfirmCancel(null)} />
+      </Dialog>
     </Screen>
   );
 }

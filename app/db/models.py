@@ -83,6 +83,12 @@ class User(Base):
     therapist_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
     # Bumped to invalidate every token issued before it (force sign-out, password reset).
     token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # What a parent wants to hear about, like therapist_status only meaningful for one
+    # role. Safety alerts are deliberately absent: an alert about a child always
+    # reaches their parent and cannot be switched off.
+    notify_sessions: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_each_activity: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notify_digest: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -353,7 +359,26 @@ class Alert(Base):
     # The therapist's own "Noted": it clears their list only. Acknowledging on the
     # family's behalf stays the parent's action (HANDOFF T09).
     therapist_noted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # An admin's "dealt with" marker for their own alerts inbox. It must NOT drive what
+    # the child is told: an admin is not someone who looks after this child.
     acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    # The child's own parent tapping "I've seen this". This is the only thing that lets
+    # the child's screen say someone who looks after them has seen it (HANDOFF rule 12),
+    # so it is deliberately separate from the admin marker above.
+    seen_by_parent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    seen_by_parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    # A parent saying they asked emergency services to help their child. SafeGate
+    # contacts nobody -- this only records who asked and when, so the child can be
+    # told plainly what is happening and there is a record of who decided
+    # (HANDOFF rule 17). Never set automatically.
+    emergency_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    emergency_requested_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 

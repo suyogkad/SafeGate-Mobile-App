@@ -1,4 +1,8 @@
 /**
+ * NOTE: the day plan belongs to the child's profile, and there is no endpoint for it
+ * yet, so what is chosen here applies to this phone only. The note on the screen says
+ * so rather than letting a parent believe they have changed their child's home screen.
+ *
  * P23 Alex's day. A navy plan panel ("Change" cycles the plan presets), setting rows that cycle on tap, switch rows
  * for the items, and the child's Home plan cards as a live preview of what Alex sees.
  * Changes show on Alex's Home (C06) immediately (shared store). Breathing, Sounds and Kind words have no Home row yet.
@@ -123,10 +127,13 @@ export default function AlexsDay() {
           ) : null}
         </View>
 
-        {/* Live preview — exactly the cards Alex sees on Home, in the child's styling */}
+        {/* Live preview — exactly the cards the child sees on Home, in their styling */}
         <View style={{ gap: space.sm }}>
           <T v="section" header>
             On {name}'s home today
+          </T>
+          <T v="bodySm" color="textSecondary">
+            This plan is set on this phone. It will reach {name}'s phone once the day plan is part of their profile.
           </T>
           <View style={{ gap: space.sm }} accessibilityLiveRegion="polite">
             <AudienceProvider value="child">

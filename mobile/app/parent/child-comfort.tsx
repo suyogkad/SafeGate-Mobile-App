@@ -1,6 +1,9 @@
 /**
  * P07 Alex's comfort settings. Value rows, switch rows and a live preview card, inside the setup shell.
- * Same settings as the child's own Comfort settings (shared store), so Alex can change them too.
+ * The same settings the child has in their own app. There is no endpoint for them yet,
+ * so they apply to the phone they are set on and do not travel to the child's phone --
+ * the note below says so, because a parent who thinks they have made their child's app
+ * easier to use when they have not is worse off than one who knows to do it there.
  * During setup Next → Link Alex's phone; opened from Home/Account (?from=home) it's "Done" and goes back.
  */
 import { router, useLocalSearchParams } from 'expo-router';
@@ -55,6 +58,11 @@ export default function ChildComfort() {
         </View>
       </Card>
       <ComfortSettings />
+      <Card tone="raised" padding={space.lg}>
+        <T v="bodySm" color="textSecondary">
+          These settings apply to this phone. {name} can set their own in their app, under You.
+        </T>
+      </Card>
     </SetupShell>
   );
 }

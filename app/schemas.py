@@ -29,6 +29,17 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
+class ParentNotifyPrefs(BaseModel):
+    """What a parent wants to hear about. Safety alerts are deliberately absent: an
+    alert about their child always reaches them and cannot be turned off."""
+
+    sessions: bool = True
+    """A notification for every small thing trains a parent to ignore them, so this
+    starts off."""
+    each_activity: bool = False
+    digest: bool = True
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -565,3 +576,46 @@ class GoalsOut(BaseModel):
     child_id: uuid.UUID
     goals: list[str]
     updated_at: datetime | None
+
+
+# ---- Safety: what a parent sees, and what the child is told ---------------
+
+
+class ParentAlertRow(BaseModel):
+    """One safety alert, for the child's own parent.
+
+    `level` is here because the parent's Alert screen shows it and the child's app
+    never does (HANDOFF rule 5). It carries no message text: an alert says what
+    happened, not what was said.
+    """
+
+    id: uuid.UUID
+    child_id: uuid.UUID
+    child_name: str | None
+    level: Literal["concern", "urgent"]
+    timestamp: datetime
+    """When the parent tapped "I've seen this", and who."""
+    acknowledged_at: datetime | None
+    acknowledged_by_name: str | None
+    """Whether a parent said they asked emergency services, and who. SafeGate
+    contacts nobody; this is a record of a human decision."""
+    emergency_requested_at: datetime | None
+    emergency_requested_by_name: str | None
+    """Who else was told. The therapist for a concern, both for an urgent one."""
+    also_told: str | None
+
+
+class CalmStateOut(BaseModel):
+    """What the child's own app may know about a flagged message.
+
+    Deliberately carries no risk level, no score and no classifier output: the
+    child is told what grown-ups have done, never how they were assessed
+    (HANDOFF rule 5). It never promises a time.
+    """
+
+    active: bool
+    """True once a grown-up who looks after the child has seen it."""
+    seen_by_grown_up: bool
+    """True once a parent said they asked emergency services to help."""
+    emergency_requested: bool
+    started_at: datetime | None

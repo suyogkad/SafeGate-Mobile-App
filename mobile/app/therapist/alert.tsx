@@ -28,17 +28,14 @@ import { noteAlert } from '@/api/therapist';
 import { EMERGENCY_NOTE_SHORT, helpline } from '@/data/helplines';
 import { callNumber, contact } from '@/lib/call';
 import { useClients, useTherapistAlerts } from '@/lib/clients';
+import { clockOf } from '@/lib/time';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-const AT = new Intl.DateTimeFormat(undefined, {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  hour: 'numeric',
-  minute: '2-digit',
-});
-const SEEN_AT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const DATE = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+
+/** "Tuesday, 6 October at 10:36 pm" -- the day matters as much as the time here. */
+const when = (iso: string) => `${DATE.format(new Date(iso))} at ${clockOf(iso)}`;
 
 export default function TherapistAlert() {
   const { c } = useTheme();
@@ -73,7 +70,7 @@ export default function TherapistAlert() {
   const n000 = helpline('000');
 
   const parentDid = alert.parent_seen_at
-    ? `${parentFirst} saw this at ${SEEN_AT.format(new Date(alert.parent_seen_at))} and will reach out to ${name}.`
+    ? `${parentFirst} saw this at ${clockOf(alert.parent_seen_at)} and will reach out to ${name}.`
     : urgent
       ? `Not seen yet. ${parentFirst} has been told.`
       : `${parentFirst} is not told about this level. It came to you.`;
@@ -97,7 +94,7 @@ export default function TherapistAlert() {
           {name}’s app switched to calm steps
         </T>
         <T v="bodyLg" color="textMuted">
-          {AT.format(new Date(alert.timestamp))}
+          {when(alert.timestamp)}
         </T>
       </View>
 

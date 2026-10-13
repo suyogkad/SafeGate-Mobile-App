@@ -126,6 +126,12 @@ async def list_alerts(
 
 @router.post("/alerts/{alert_id}/acknowledge", status_code=status.HTTP_204_NO_CONTENT)
 async def acknowledge_alert(alert_id: uuid.UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(admin_only)) -> None:
+    """Marks this alert dealt with in the admin inbox, and nothing else.
+
+    It deliberately does not touch `seen_by_parent_at`: the child's screen says
+    "Someone who looks after you has seen this", and an admin is not that person.
+    Only the child's own parent can make that sentence true.
+    """
     alert = (await db.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
     if alert is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")

@@ -22,7 +22,8 @@ import { Icon } from '@/components/ui/Icon';
 import { FACES } from '@/data/faces';
 import { demoOnly } from '@/lib/call';
 import { signOutEverywhere } from '@/lib/auth';
-import { useApp, useChildName, useTherapistFullName } from '@/store/app';
+import { useChildLinked, useMyChild, useNotifyPrefs } from '@/lib/family';
+import { useApp } from '@/store/app';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
@@ -41,13 +42,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Account() {
   const { c } = useTheme();
-  const name = useChildName();
-  const childId = useApp((s) => s.childId);
-  const therapistFull = useTherapistFullName();
   const account = useApp((s) => s.account);
-  const linked = useApp((s) => s.childLinked);
-  const prefs = useApp((s) => s.alertPrefs);
-  const setPref = useApp((s) => s.setAlertPref);
+  const child = useMyChild();
+  const name = child?.full_name ?? '';
+  const childId = child?.id ?? null;
+  const therapistFull = child?.therapist_name ?? null;
+  // Whether a phone is actually paired, from the backend: a flag in this app's own
+  // memory would say "not linked yet" for a phone paired on another device.
+  const linked = useChildLinked(child?.id);
+  const { prefs, set: setPrefs } = useNotifyPrefs();
 
   return (
     <Screen inTabs backdrop="brand" header={<Header title="Account" left="none" getHelp={false} />}>
@@ -59,14 +62,28 @@ export default function Account() {
         </NavyPanel>
 
         <Section title="Your child">
+          {child ? (
           <ListRow
             left={<Avatar initials={(name || 'C').charAt(0).toUpperCase()} size={44} />}
             title={name || 'Child'}
-            right={<Badge label={linked ? 'Phone linked' : 'Not linked yet'} tone={linked ? 'success' : 'warn'} />}
+            right={
+              linked === null ? undefined : (
+                <Badge label={linked ? 'Phone linked' : 'Not linked yet'} tone={linked ? 'success' : 'warn'} />
+              )
+            }
             chevron
             onPress={() => router.push((linked ? '/parent/child-comfort?from=home' : '/parent/link-child') as Href)}
-            label={`${name || 'Child'}. ${linked ? 'Phone linked' : 'Not linked yet'}. Open`}
+            label={`${name || 'Child'}. ${linked === null ? '' : linked ? 'Phone linked' : 'Not linked yet'}. Open`}
           />
+          ) : (
+            <ListRow
+              title="Add your child"
+              subtitle="Their name is all SafeGate needs to start"
+              icon="plus-circle"
+              chevron
+              onPress={() => router.push('/parent/link-child')}
+            />
+          )}
         </Section>
 
         {childId ? (
@@ -77,7 +94,17 @@ export default function Account() {
 
         <Section title="Alerts">
           <ListRow title="How we reach you" value="App and text" icon="bell" divider onPress={() => demoOnly('In the real app you could choose how alerts reach you.')} />
-          <ListRow title="Also tell" value={therapistFull} icon="user-check" divider onPress={() => demoOnly('In the real app you could choose who else is told.')} />
+          <ListRow
+            title="Also tell"
+            value={therapistFull ?? 'No therapist yet'}
+            icon="user-check"
+            divider
+            onPress={() =>
+              therapistFull
+                ? demoOnly('In the real app you could choose who else is told.')
+                : router.push('/parent/find-therapist')
+            }
+          />
           <ListRow title="All notifications" icon="list" chevron onPress={() => router.push('/parent/notifications')} />
         </Section>
 
@@ -96,18 +123,23 @@ export default function Account() {
             }
             divider
           />
-          <SwitchRow title="Sessions and notes" subtitle="Bookings, reminders and notes from the therapist" on={prefs.sessions} onToggle={() => setPref('sessions', !prefs.sessions)} />
+          <SwitchRow
+            title="Sessions and notes"
+            subtitle="Bookings, reminders and notes from the therapist"
+            on={prefs.sessions}
+            onToggle={() => setPrefs({ sessions: !prefs.sessions })}
+          />
           <SwitchRow
             title={`Tell me each time ${name || 'child'} checks in or writes`}
             subtitle="When off, these wait quietly in Notifications"
-            on={prefs.eachActivity}
-            onToggle={() => setPref('eachActivity', !prefs.eachActivity)}
+            on={prefs.each_activity}
+            onToggle={() => setPrefs({ each_activity: !prefs.each_activity })}
           />
           <SwitchRow
             title={`Daily summary of ${name || 'child'}'s day`}
             subtitle="Around 7:00 pm"
             on={prefs.digest}
-            onToggle={() => setPref('digest', !prefs.digest)}
+            onToggle={() => setPrefs({ digest: !prefs.digest })}
             divider={false}
           />
         </Section>

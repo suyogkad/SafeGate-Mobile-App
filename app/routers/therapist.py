@@ -83,9 +83,9 @@ async def my_alerts(
             child_name=names.get(r.child_id),
             level=r.level.value,
             timestamp=r.timestamp,
-            # Whether the family has seen it: the therapist's alert screen says so,
-            # and it is the difference between "nobody has acted" and "a parent has".
-            parent_seen_at=r.acknowledged_at,
+            # Whether the FAMILY has seen it. Deliberately not the admin's inbox
+            # marker: "a parent has seen this" has to mean a parent.
+            parent_seen_at=r.seen_by_parent_at,
             noted_at=r.therapist_noted_at,
         )
         for r in rows

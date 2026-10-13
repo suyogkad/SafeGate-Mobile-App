@@ -1,7 +1,12 @@
 /**
- * P17 Alex's chats. Segmented Day | Week | Month and a list of chat cards (caption, title, character circle) on the
- * brand background with staggered entrances.
- * "Today" is live from this session (Talk, calm mode, journal); then the demo history by day. Each opens P18.
+ * P17 <child>'s chats. Day | Week | Month, then a card per day of real conversation.
+ *
+ * The child's app tells them plainly that their grown-up can read these (rule 3), and the
+ * product depends on that being true — so this reads the real conversation log, and the
+ * banner at the top says it again to the parent.
+ *
+ * A day where the app switched to calm steps is marked, because that is the day a parent
+ * most needs to find. The concern level stays on the parent's side only (rule 5).
  */
 import { useState } from 'react';
 import { router, type Href } from 'expo-router';
@@ -16,46 +21,33 @@ import { Icon } from '@/components/ui/Icon';
 import { Segmented } from '@/components/ui/Segmented';
 import { T } from '@/components/ui/T';
 import { FACES } from '@/data/faces';
-import { KIND_ART, KIND_TAG, TRANSCRIPTS, type Transcript } from '@/data/transcripts';
-import { useApp, useChildName } from '@/store/app';
+import { useChildChats, useMyChild } from '@/lib/family';
+import { addDays, localDateIso, todayIso } from '@/lib/schedule';
+import { clockOf } from '@/lib/time';
 import { artTints, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 const RANGES = ['Day', 'Week', 'Month'] as const;
+const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
 export default function Chats() {
   const { c } = useTheme();
-  const name = useChildName();
+  const child = useMyChild();
+  const name = child?.full_name || 'your child';
+  const { turns, loading } = useChildChats(child?.id);
   const [range, setRange] = useState<(typeof RANGES)[number]>('Week');
-  const messages = useApp((s) => s.messages);
-  const journal = useApp((s) => s.journal);
-  const calmMode = useApp((s) => s.calmMode);
-  const calmAt = useApp((s) => s.calmAt);
-  const hasLive = messages.length > 0 || journal.length > 0 || calmMode !== 'off';
 
-  // Demo history, grouped by day in order. "Day" shows only today.
-  const days: { day: string; items: Transcript[] }[] = [];
-  if (range !== 'Day') {
-    TRANSCRIPTS.forEach((t) => {
-      const g = days.find((d) => d.day === t.day);
-      if (g) g.items.push(t);
-      else days.push({ day: t.day, items: [t] });
-    });
+  const today = todayIso();
+  const from = range === 'Day' ? today : range === 'Week' ? addDays(today, -6) : addDays(today, -29);
+
+  // One card per day, newest first.
+  const byDay = new Map<string, typeof turns>();
+  for (const t of turns) {
+    const day = localDateIso(new Date(t.timestamp));
+    if (day < from) continue;
+    byDay.set(day, [...(byDay.get(day) ?? []), t]);
   }
-
-  const card = (t: Transcript) => {
-    const art = KIND_ART[t.kind];
-    return (
-      <CheckinCard
-        key={t.id}
-        caption={`${KIND_TAG[t.kind]} · ${t.time}`}
-        title={t.opener}
-        right={<FaceCircle face={FACES[art.face]} tint={artTints[art.tint]} size={64} />}
-        onPress={() => router.push(`/parent/transcript?id=${t.id}` as Href)}
-        a11yLabel={`${KIND_TAG[t.kind]}, ${t.day}, ${t.time}. ${t.opener}. Open`}
-      />
-    );
-  };
+  const days = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
 
   return (
     <Screen backdrop="brand" header={<Header title={`${name}'s chats`} getHelp={false} fallback="/parent/home" />}>
@@ -70,41 +62,54 @@ export default function Chats() {
 
       <Segmented label="Show chats from" options={RANGES} value={range} onChange={setRange} />
 
-      <Stagger>
-        {hasLive ? (
-          <View style={{ gap: space.md }}>
-            <T v="section" header>
-              Today
+      {days.length === 0 ? (
+        <Card tone="raised" r={24} padding={space.xl}>
+          <View style={{ alignItems: 'center', gap: space.md }}>
+            <FaceCircle face={FACES.monocleWave} tint={artTints.blue} size={80} />
+            <T v="bodyLg" color="textSecondary" center>
+              {loading
+                ? 'Loading…'
+                : range === 'Day'
+                  ? `Nothing from ${name} today yet.`
+                  : `No chats from ${name} in this time.`}
             </T>
-            <CheckinCard
-              caption={`${calmMode !== 'off' ? 'CALM STEPS' : messages.length ? 'TALK' : 'JOURNAL'} · ${calmMode !== 'off' ? calmAt : 'today'}`}
-              title={calmMode !== 'off' ? 'The app switched to calm steps.' : `${name}'s chats from today`}
-              right={
-                <FaceCircle
-                  face={calmMode !== 'off' ? FACES.calmHexagon : FACES.monocleWave}
-                  tint={calmMode !== 'off' ? artTints.cyan : artTints.blue}
-                  size={64}
+          </View>
+        </Card>
+      ) : (
+        <Stagger>
+          {days.map(([day, items]) => {
+            const calm = items.some((t) => t.flagged);
+            const first = items[0];
+            const last = items[items.length - 1];
+            return (
+              <View key={day} style={{ gap: space.md }}>
+                <T v="section" header>
+                  {day === today ? 'Today' : DAY.format(new Date(`${day}T12:00:00`))}
+                </T>
+                <CheckinCard
+                  caption={`${calm ? 'CALM STEPS' : 'TALK'} · ${clockOf(first.timestamp)}–${clockOf(last.timestamp)}`}
+                  title={
+                    calm
+                      ? 'The app switched to calm steps this day.'
+                      : items.length === 1
+                        ? 'One chat with the AI companion'
+                        : `${items.length} chats with the AI companion`
+                  }
+                  right={
+                    <FaceCircle
+                      face={calm ? FACES.calmHexagon : FACES.monocleWave}
+                      tint={calm ? artTints.cyan : artTints.blue}
+                      size={64}
+                    />
+                  }
+                  onPress={() => router.push(`/parent/transcript?day=${day}` as Href)}
+                  a11yLabel={`${calm ? 'Calm steps' : 'Chats'}, ${day === today ? 'today' : DAY.format(new Date(`${day}T12:00:00`))}. Open`}
                 />
-              }
-              onPress={() => router.push('/parent/transcript?id=live')}
-            />
-          </View>
-        ) : range === 'Day' ? (
-          <Card tone="raised" padding={space.lg}>
-            <T v="bodyLg" color="textSecondary">
-              Nothing yet today.
-            </T>
-          </Card>
-        ) : null}
-        {days.map((d) => (
-          <View key={d.day} style={{ gap: space.md }}>
-            <T v="section" header>
-              {d.day}
-            </T>
-            {d.items.map(card)}
-          </View>
-        ))}
-      </Stagger>
+              </View>
+            );
+          })}
+        </Stagger>
+      )}
     </Screen>
   );
 }

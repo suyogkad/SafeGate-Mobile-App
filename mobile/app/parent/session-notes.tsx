@@ -38,8 +38,9 @@ export default function SessionNotes() {
   const session = sessions.find((s) => s.id === id) ?? newestShared;
 
   const { notes, loading } = useSharedNotes(id);
-  const therapistFull = notes?.therapist_name ?? session?.therapist_name ?? 'your therapist';
-  const therapistFirst = firstName(therapistFull) || 'your therapist';
+  // Only run a real name through firstName: "your therapist" would come back "your".
+  const therapistFull = notes?.therapist_name ?? session?.therapist_name ?? null;
+  const therapistFirst = (therapistFull && firstName(therapistFull)) || 'your therapist';
   const shared = !!notes;
 
   return (
@@ -51,7 +52,7 @@ export default function SessionNotes() {
           title={`Send ${therapistFirst} a note`}
           variant="outline"
           iconLeft="send"
-          onPress={() => contact('message', therapistFull)}
+          onPress={() => contact('message', therapistFull ?? 'your therapist')}
         />
       }
     >
