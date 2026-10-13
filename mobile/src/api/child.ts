@@ -20,3 +20,52 @@ export type ApiCalmState = {
 export function getCalmState(): Promise<ApiCalmState> {
   return api.get<ApiCalmState>('/companion/calm-state');
 }
+
+// ---- The child's own records --------------------------------------------
+
+/** What the child's app is told back after saving. `calm` is whether to switch to
+ * calm steps; it is never told why (rule 5). */
+export type ApiSaved = { id: string; created_at: string; calm: boolean };
+
+export function saveCheckin(input: {
+  mood: string;
+  words: string[];
+  topics: string[];
+  note?: string | null;
+}): Promise<ApiSaved> {
+  return api.post<ApiSaved>('/companion/checkins', input);
+}
+
+export type ApiJournalEntry = {
+  id: string;
+  created_at: string;
+  prompt: string | null;
+  text: string;
+  device_id: string | null;
+};
+
+/** Free text, so it goes through the safety layer before it is saved. */
+export function saveJournalEntry(text: string, prompt?: string | null): Promise<ApiSaved> {
+  return api.post<ApiSaved>('/companion/journal', { text, prompt: prompt ?? null });
+}
+
+export function myJournal(): Promise<ApiJournalEntry[]> {
+  return api.get<ApiJournalEntry[]>('/companion/my-journal');
+}
+
+// ---- The child's own sessions -------------------------------------------
+
+/** Smaller than the adults' view on purpose: when it is, how, and who with. */
+export type ApiChildSession = {
+  id: string;
+  start_time: string;
+  end_time: string;
+  status: 'booked' | 'cancelled' | 'completed';
+  meeting_kind: 'video' | 'in_person';
+  therapist_name: string | null;
+  clinic_name: string | null;
+};
+
+export function mySessions(): Promise<ApiChildSession[]> {
+  return api.get<ApiChildSession[]>('/companion/my-sessions');
+}

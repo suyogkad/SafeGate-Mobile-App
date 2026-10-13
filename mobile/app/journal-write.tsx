@@ -1,8 +1,17 @@
 /**
- * C20 Journal writing. The prompt is big; the child writes below. Save → addJournal (the parent can read it) + a
- * companion reply card ("Answer" keeps writing, with the reply as the next prompt). Ideas = sentence starters. Mic →
- * Speak → Is this right?; the heard words land in the box here. "Your grown-up can read what you write here." is
- * always shown.
+ * C20 Journal writing. The prompt is big; the child writes below. Save sends the entry
+ * to the backend, where the parent can read it. Ideas = sentence starters. Mic → Speak →
+ * Is this right?; the heard words land in the box here. "Your grown-up can read what you
+ * write here." is always shown.
+ *
+ * What the child writes is a child message, so it goes through the safety layer before
+ * it is saved (safety rule 2). A flagged entry switches the app to calm steps, and the
+ * child is never told why (rule 5).
+ *
+ * The card after saving is a **fixed written prompt, not an AI reply**, and is not
+ * labelled as the companion: nothing unchecked by the reply check may be shown to a
+ * child as something the AI said (safety rule 3). Asking the companion for a real reply
+ * here would need the whole defence layer, which Talk already is.
  */
 import { useEffect, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -19,6 +28,7 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { T } from '@/components/ui/T';
 import { COMPANION_REPLY, SMILE_REPLY, TODAYS_IDEAS, WRITING_STARTERS } from '@/data/journal';
+import { saveJournalEntry } from '@/lib/child';
 import { useApp } from '@/store/app';
 import { gutter, radius, shadow, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
@@ -50,21 +60,40 @@ export default function JournalWrite() {
     return () => clearTimeout(id);
   }, [lines.length]);
 
-  const save = () => {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const save = async () => {
     const value = text.trim();
     if (!value) return;
-    useApp.getState().addJournal({ prompt, text: value });
-    useApp.getState().markDone('journal');
-    const reply = /smile/i.test(prompt) && lines.length === 0 ? SMILE_REPLY : COMPANION_REPLY;
-    setLines((l) => [
-      ...l,
-      { id: `p${l.length}`, from: 'companion', text: prompt },
-      { id: `t${l.length}`, from: 'me', text: value },
-      { id: `r${l.length}`, from: 'companion', text: reply, card: true },
-    ]);
-    setPrompt(reply);
-    setText('');
-    setIdeas(false);
+    setBusy(true);
+    setFailed(false);
+    try {
+      const result = await saveJournalEntry(value, prompt);
+      useApp.getState().addJournal({ prompt, text: value });
+      useApp.getState().markDone('journal');
+      if (result.calm) {
+        // Flagged. Calm steps, and nothing about why.
+        useApp.getState().setCalmMode('active');
+        router.replace('/calm-mode');
+        return;
+      }
+      // A fixed written next prompt, not an AI reply, so it carries no AI label.
+      const next = /smile/i.test(prompt) && lines.length === 0 ? SMILE_REPLY : COMPANION_REPLY;
+      setLines((l) => [
+        ...l,
+        { id: `p${l.length}`, from: 'companion', text: prompt },
+        { id: `t${l.length}`, from: 'me', text: value },
+      ]);
+      setPrompt(next);
+      setText('');
+      setIdeas(false);
+    } catch {
+      // Nothing is lost: what they wrote stays in the box.
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saved = lines.length > 0;
@@ -83,20 +112,32 @@ export default function JournalWrite() {
           </T>
         </View>
 
+        {failed ? (
+          <T v="bodySm" color="textSecondary" accessibilityLiveRegion="polite">
+            That didn't save. What you wrote is still here.
+          </T>
+        ) : null}
+
         {saved ? (
-          <View style={{ backgroundColor: c.bg, borderRadius: radius.panel, padding: space.xl, ...shadow.lift }}>
-            <Conversation
-              lines={lines}
-              cardActions={(l) =>
-                l.id === lines[lines.length - 1].id ? (
-                  <Button title="Answer" size="small" variant="outline" iconLeft="corner-down-right" onPress={() => input.current?.focus()} />
-                ) : null
-              }
-            />
+          <View style={{ backgroundColor: c.bg, borderRadius: radius.panel, padding: space.xl, gap: space.lg, ...shadow.lift }}>
+            <Conversation lines={lines} />
+            <View style={{ gap: space.sm }}>
+              <T v="caption" color="textMuted">
+                NEXT IDEA
+              </T>
+              <T v="bodyLg">{prompt}</T>
+              <Button
+                title="Keep writing"
+                size="small"
+                variant="outline"
+                iconLeft="corner-down-right"
+                onPress={() => input.current?.focus()}
+              />
+            </View>
           </View>
         ) : null}
 
-        {/* The prompt is big until the first save; after that the companion's card asks the next question. */}
+        {/* The prompt is big until the first save; after that the card above carries it. */}
         {saved ? null : (
           <Appear>
             <View style={{ gap: space.xs }}>
@@ -158,7 +199,7 @@ export default function JournalWrite() {
           <IconButton icon="star" label={ideas ? 'Hide ideas' : 'Ideas'} onPress={() => setIdeas((o) => !o)} />
           <IconButton icon="mic" label="Speak" onPress={() => router.push('/speak')} />
           <View style={{ flex: 1 }} />
-          <Button title="Save" size="small" icon="check" disabled={!text.trim()} onPress={save} />
+          <Button title={failed ? 'Try again' : 'Save'} size="small" icon="check" disabled={!text.trim() || busy} onPress={save} />
         </View>
       </StickyBar>
     </KeyboardAvoidingView>
