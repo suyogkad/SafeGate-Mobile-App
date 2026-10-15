@@ -4,6 +4,16 @@ A support and learning tool for autistic children: parents book online sessions 
 
 This repo also contains two clients: `frontend/`, the admin web console (Vite + React + Tailwind, see `frontend/README.md`), and `mobile/`, the parent + therapist app with a supervised child mode (Expo / React Native, see `mobile/README.md`).
 
+## Documentation
+
+- **`TECHNICAL.md`** -- setup, the code map, how a request flows, where each safety rule
+  is enforced, the data model, every endpoint, and what is not built. Start here.
+- **`USERMANUAL.md`** -- how the administrator, therapists, parents and children actually
+  use the app, A to Z, with no technical content.
+- **`CLAUDE.md`** -- the non-negotiable safety and privacy rules this codebase follows.
+- **`mobile/HANDOFF.md`** -- authoritative for the mobile product: every screen, the 21
+  numbered product rules, and the wording that is a compliance surface.
+
 ## Stack
 
 - Python 3.12, FastAPI, Pydantic v2
@@ -90,13 +100,13 @@ pytest
 
 Tests run against a real local Postgres (each test wrapped in a transaction that's rolled back, so nothing persists) and force `AI_PROVIDER=mock` for the whole session regardless of your local `.env` -- so tests never hit the real Gemini API by accident.
 
-One test is opt-in and skipped by default: `test_real_classifier_accuracy_report`, which calls the real classifier against `tests/safety_cases.json` and reports how many risky messages were caught and how many safe ones were wrongly flagged. It only runs when a real `GOOGLE_API_KEY` is set in `.env`, and stops early after 3 consecutive failures rather than burning through a day's quota. Run it directly:
+Tests that call the real model are marked `real_model` and excluded from the default run. The accuracy report calls the real classifier against `tests/safety_cases.json` and reports how many risky messages were caught and how many safe ones were wrongly flagged:
 
 ```bash
-pytest tests/test_companion_safety.py::test_real_classifier_accuracy_report -v -s
+pytest -m real_model -s
 ```
 
-Given the free tier's 20-requests/day/model cap, this test usually cannot complete all 65 cases in a single day -- see `CLAUDE.md` for the current, honestly-reported state of classifier accuracy testing.
+On Groq the full 65-case suite completes in one run. Last full run (6 Oct 2026, `openai/gpt-oss-120b`): **44/44 risky caught, 0/20 safe wrongly flagged**, one transient error retried. That is a smoke test, not clinical validation, and the prompts are still `PLACEHOLDER` -- see `CLAUDE.md`.
 
 ## Before launch checklist
 
@@ -105,7 +115,8 @@ Carried from `CLAUDE.md` -- **none of this has been done yet.** Nothing in this 
 - [ ] Clinical review of `scripts.py`, the keyword list, and the safety prompts (all currently marked `PLACEHOLDER`)
 - [ ] Privacy law review (Australian Privacy Act and any applicable health data rules)
 - [ ] Review of Google's guidelines for organizations serving minors, including age verification and monitoring
-- [ ] Move off Gemini's free tier to a paid tier before any real child's conversation data is sent -- the free tier's terms allow Google to use inputs to improve its models
+- [ ] Check the active provider's terms on training with inputs before any real child's data is sent. Groq is the active provider; Gemini is kept as a fallback and its free tier allows Google to train on inputs
+- [ ] Check the speech-to-text provider's retention and training terms -- audio is not stored by SafeGate, but a child's voice does leave the server
 - [ ] Keep server clocks on NTP -- video meeting-token expiry and JWT expiry are both computed from the server's clock
 - [ ] Encryption at rest and in transit
 - [ ] Penetration test
@@ -113,8 +124,8 @@ Carried from `CLAUDE.md` -- **none of this has been done yet.** Nothing in this 
 
 ## Known gaps (not yet built)
 
-- **No `session_notes` endpoints.** The table exists in the schema (Stage 1), but no router was ever built for therapists to write or read session notes.
 - **Notifications are still mock** -- alerts and session reminders are recorded but never actually delivered. No email or SMS provider is wired up yet.
 - **Daily.co is US-hosted**, so session video leaves Australia. Flag this in the privacy review; `app/video.py` is an abstraction, so a self-hosted provider in an AU region can replace it without touching the rest of the app.
 - **APScheduler uses an in-memory job store** -- reminders do not survive an app restart.
-- **Classifier accuracy is only partially validated** against the real model (small hand-picked samples, not the full 65-case suite) due to free-tier quota limits, and has a known, unresolved false-positive pattern on certain figurative language (e.g. "dying to know what happens"). See `CLAUDE.md`'s AI provider notes for the full detail.
+- **Classifier accuracy is a smoke test, not clinical validation.** The full 65-case suite now runs against the real model and passed cleanly, but the prompts, scripts and keyword list are all still `PLACEHOLDER` and need a clinician. See `CLAUDE.md`.
+- **See `TECHNICAL.md` section 14** for the full, current list of what is not built.
