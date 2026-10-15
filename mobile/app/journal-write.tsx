@@ -120,7 +120,9 @@ export default function JournalWrite() {
 
         {saved ? (
           <View style={{ backgroundColor: c.bg, borderRadius: radius.panel, padding: space.xl, gap: space.lg, ...shadow.lift }}>
-            <Conversation lines={lines} />
+            {/* "Idea", not "AI companion": these prompts are fixed written text, and
+                saying the AI wrote them would be untrue (safety rule 3). */}
+            <Conversation lines={lines} companionLabel="Idea" />
             <View style={{ gap: space.sm }}>
               <T v="caption" color="textMuted">
                 NEXT IDEA

@@ -1,7 +1,12 @@
 /**
- * C22 My sessions. The session card (initials, date, kind, Join) and "Before your session" rows. Soft background.
- * Follows the booked session in the store (the parent's booking changes it). Video: Join is disabled until it
- * opens; in person: the clinic and address instead. Read-only: no calendar, cancel or reschedule.
+ * C22 My sessions. The session card (initials, date, kind) and "Before your session"
+ * rows. Read-only: no calendar, cancel or reschedule -- booking and changing a time is
+ * the parent's.
+ *
+ * Real: the child's own sessions from `GET /companion/my-sessions`, which is smaller
+ * than the adults' view on purpose. There is no Join here: the video link is issued per
+ * participant to the parent and the therapist, and the child is with their parent. The
+ * card says when it opens instead of offering a button that would be refused.
  */
 import { View } from 'react-native';
 import { Header } from '@/components/Header';
@@ -14,20 +19,20 @@ import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { T } from '@/components/ui/T';
 import { BEFORE_SESSION } from '@/data/sessions';
-import { useApp } from '@/store/app';
+import { nextSessionOf, useMySessions } from '@/lib/child';
+import { dayLabel, localDateIso } from '@/lib/schedule';
+import { clockOf, firstName, initialsOf } from '@/lib/time';
 import { radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
+const OPENS_EARLY_MIN = 10;
+
 export default function MySessions() {
   const { c } = useTheme();
-  const session = useApp((s) => s.session);
-  const video = session?.kind === 'Video call';
-  const initials = session?.therapist
-    ? session.therapist
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-    : 'PS';
+  const sessions = useMySessions();
+  const session = nextSessionOf(sessions);
+  const video = session?.meeting_kind === 'video';
+  const who = session?.therapist_name ?? null;
 
   return (
     <Screen header={<Header title="My sessions" fallback="/you" />}>
@@ -39,30 +44,28 @@ export default function MySessions() {
         {session ? (
           <Card tone="raised" r={24} padding={space.lg}>
             <View style={{ flexDirection: 'row', gap: space.lg }}>
-              <Avatar initials={initials} size={64} />
+              <Avatar initials={who ? initialsOf(who) : '?'} size={64} />
               <View style={{ flex: 1, gap: space.sm }}>
-                <Badge label={session.dateLabel.toUpperCase()} />
+                <Badge label={dayLabel(localDateIso(new Date(session.start_time))).toUpperCase()} />
                 <T v="heading" header>
-                  Session with {session.therapistFirst}
+                  {who ? `Session with ${firstName(who)}` : 'Your next session'}
                 </T>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
                   <Icon name={video ? 'video' : 'map-pin'} size={16} color={c.textMuted} />
                   <T v="bodySm" color="textSecondary">
-                    {session.time} · {session.kind}
+                    {clockOf(session.start_time)} · {video ? 'Video call' : 'In person'}
                   </T>
                 </View>
                 {video ? (
-                  <View style={{ gap: space.xs, marginTop: space.xs }}>
-                    <Button title="Join" size="small" icon="arrow-right" disabled label={`Join. Opens at ${session.joinOpens}`} />
-                    <T v="caption" color="textMuted">
-                      Join opens at {session.joinOpens}
-                    </T>
-                  </View>
-                ) : (
+                  <T v="caption" color="textMuted" style={{ marginTop: space.xs }}>
+                    Your grown-up opens the call at{' '}
+                    {clockOf(new Date(session.start_time).getTime() - OPENS_EARLY_MIN * 60_000)}.
+                  </T>
+                ) : session.clinic_name ? (
                   <View style={{ backgroundColor: c.surface, borderRadius: radius.field, padding: space.md, marginTop: space.xs }}>
-                    <T v="bodySmMedium">{session.place}</T>
+                    <T v="bodySmMedium">{session.clinic_name}</T>
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
           </Card>
@@ -73,7 +76,7 @@ export default function MySessions() {
                 <Icon name="calendar" size={26} color={c.brand} />
               </View>
               <T v="heading" center>
-                No session booked yet
+                {sessions === null ? 'Just a moment…' : 'No session booked yet'}
               </T>
               <T v="bodySm" color="textMuted" center>
                 Your grown-up can book your next session with your therapist.

@@ -55,6 +55,11 @@ export default function You() {
       </Appear>
 
       <ComfortSettings />
+      <Card tone="raised" padding={space.lg}>
+        <T v="bodySm" color="textSecondary">
+          These settings apply to this phone. They work straight away.
+        </T>
+      </Card>
 
       <View style={{ gap: space.sm }}>
         <T v="section" header>

@@ -2,6 +2,11 @@
  * C21 My task. A navy task panel with the title and its progress, the steps as tick rows in a raised card, and an
  * "All done!" card. Progress IS shown here ("2 of 5 steps"): it's one task, not a score.
  * No points, no confetti, no strike-through, no tab bar. Ticks animate only when the child has Movement on.
+ *
+ * Steps that came from a Talk card are real: that reply went through the reply check
+ * like any other. The default task is placeholder content, and there is no endpoint for
+ * tasks or for which steps are ticked, so ticks last as long as the app is open. The
+ * line at the bottom says so rather than letting a child think it was kept.
  */
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, Platform, View } from 'react-native';
@@ -99,6 +104,10 @@ export default function MyTask() {
           </Card>
         </Appear>
       ) : null}
+
+      <T v="bodySm" color="textMuted">
+        Ticks aren't saved yet, so they start again next time you open SafeGate.
+      </T>
     </Screen>
   );
 }

@@ -17,12 +17,20 @@ export type ConvLine = { id?: number | string; from: 'companion' | 'me'; text: s
 export function Conversation({
   lines,
   childLabel = 'You',
+  companionLabel = 'AI companion',
   cardActions,
   footer,
 }: {
   lines: ConvLine[];
   /** caption for the child's lines: "You" in Talk, the child's name in the parent's transcript */
   childLabel?: string;
+  /**
+   * Caption for the other side. "AI companion" is right in Talk, where the words
+   * really came from the companion through the reply check. The journal's prompts are
+   * fixed written ideas, so calling them the AI there would say something untrue
+   * about where they came from (safety rule 3).
+   */
+  companionLabel?: string;
   /** buttons under a companion card (child's Talk only) */
   cardActions?: (line: ConvLine) => ReactNode;
   footer?: ReactNode;
@@ -50,10 +58,10 @@ export function Conversation({
         }
         const companion = l.from === 'companion';
         return (
-          <View key={l.id ?? i} style={{ gap: 2 }} accessible accessibilityLabel={`${companion ? 'AI companion' : childLabel}: ${l.text}`}>
+          <View key={l.id ?? i} style={{ gap: 2 }} accessible accessibilityLabel={`${companion ? companionLabel : childLabel}: ${l.text}`}>
             {showSpeaker ? (
               <T v="caption" color="textMuted">
-                {companion ? 'AI companion' : childLabel}
+                {companion ? companionLabel : childLabel}
               </T>
             ) : null}
             <T v={companion ? 'bodyLg' : 'body'} tint={companion ? c.brand : c.text} selectable dataDetectorType="none">

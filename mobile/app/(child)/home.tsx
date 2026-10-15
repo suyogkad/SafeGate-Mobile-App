@@ -22,21 +22,20 @@ import { FACES } from '@/data/faces';
 import { greeting } from '@/lib/time';
 import { useApp, useChildName } from '@/store/app';
 import { artTints, gutter, radius, space } from '@/theme/tokens';
+import { nextSessionOf, useMySessions } from '@/lib/child';
+import { dayShort, localDateIso } from '@/lib/schedule';
+import { clockOf, firstName, initialsOf } from '@/lib/time';
 import { useTheme } from '@/theme/useTheme';
 
 export default function Home() {
   const { c } = useTheme();
   const name = useChildName();
-  const session = useApp((s) => s.session);
+  // The child's own next session, from the backend. The rest of "Your day" is the
+  // plan the parent chose, which still lives on this phone.
+  const session = nextSessionOf(useMySessions());
   const day = useApp((s) => s.day);
   const done = useApp((s) => s.doneToday);
   const rows = homeRows(day);
-  const initials = session?.therapist
-    ? session.therapist
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-    : 'PS';
 
   return (
     <Screen inTabs padded={false} edgeToEdge>
@@ -85,9 +84,13 @@ export default function Home() {
                 ? [
                     <CheckinCard
                       key="session"
-                      caption={`SESSION · ${session.short}`}
-                      title={`session with ${session.therapistFirst} at ${session.time.replace(' ', ' ')}`}
-                      right={<Avatar initials={initials} size={72} />}
+                      caption={`SESSION · ${dayShort(localDateIso(new Date(session.start_time))).toUpperCase()}`}
+                      title={
+                        session.therapist_name
+                          ? `session with ${firstName(session.therapist_name)} at ${clockOf(session.start_time)}`
+                          : `session at ${clockOf(session.start_time)}`
+                      }
+                      right={<Avatar initials={session.therapist_name ? initialsOf(session.therapist_name) : '?'} size={72} />}
                       onPress={() => router.push('/my-sessions')}
                     />,
                   ]
