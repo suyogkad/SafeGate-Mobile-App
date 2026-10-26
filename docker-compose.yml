@@ -1,31 +1,84 @@
+# SafeGate on a VPS: clone, write .env, `docker compose up -d --build`.
+#
+# Three containers. Only Caddy is reachable from the internet; it terminates
+# HTTPS and proxies to the API over the private compose network. The database
+# publishes no ports at all, so it cannot be reached from outside this host.
+#
+# For local development use docker-compose.dev.yml instead -- it mounts the
+# source, reloads on change and exposes Postgres on 5432.
+#
+# Full walkthrough: TECHNICAL.md, "Deploying to a VPS".
+
+name: safegate
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: autism_user
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: autism_support
-    ports:
-      - "5432:5432"
+      # The :? form stops the stack with a readable error rather than starting
+      # a database with a blank or default password.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      # Child health data: collate predictably rather than by the host's locale.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # No `ports:`. The database is for the API only.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autism_user -d autism_support"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 20s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  app:
-    build: .
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Secrets and settings come from the file, never from the image.
     env_file: .env
+    environment:
+      # Built from the values above so it can never drift from the db service.
+      # This deliberately overrides any DATABASE_URL in .env, which on a dev
+      # machine points at localhost and would fail from inside a container.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ENVIRONMENT: production
     depends_on:
       db:
         condition: service_healthy
+    # Reachable from Caddy on the compose network, not from the host.
+    expose:
+      - "8000"
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env, e.g. api.yourdomain.com}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env for certificate notices}
     ports:
-      - "8000:8000"
+      - "80:80"
+      - "443:443"
     volumes:
-      - .:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Keep the certificates across restarts. Without this volume Caddy asks
+      # Let's Encrypt for a new one every time and will hit their rate limit.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    logging: *logging
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

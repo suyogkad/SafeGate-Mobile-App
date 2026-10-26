@@ -1,0 +1,51 @@
+# Local development in containers: source mounted, reload on change, and
+# Postgres published on 5432 so you can connect a client to it.
+#
+#   docker compose -f docker-compose.dev.yml up
+#
+# The production stack is the plain docker-compose.yml. This file is deliberately
+# not it: the password below is a placeholder, the database is exposed to the
+# host, and the source directory is mounted over the image.
+#
+# Note that on this dev machine Docker Desktop conflicts with the onboard NIC
+# through the Windows hypervisor, which is why local development normally uses a
+# natively installed Postgres instead. This file is for Linux hosts and CI.
+
+name: safegate-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: autism_user
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: autism_support
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autism_user -d autism_support"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://autism_user:changeme@db:5432/autism_support
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    # The image's entrypoint runs the migrations and then starts uvicorn, and
+    # appends whatever is here to that command -- so this adds --reload rather
+    # than replacing the whole invocation.
+    command: ["--reload"]
+
+volumes:
+  pgdata:

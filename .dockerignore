@@ -1,0 +1,47 @@
+# Keep the build context to what the backend image actually needs.
+#
+# The first entry is the one that matters: without it `COPY . .` bakes .env --
+# the JWT secret, the Groq key, the Daily key -- into an image layer, where it
+# survives even if the file is deleted in a later layer. Secrets reach the
+# container through env_file at run time, never through the image.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Version control and CI
+.git
+.gitignore
+.github
+
+# The two clients are deployed separately; the API image needs neither.
+frontend
+mobile
+mobile-old
+**/node_modules
+
+# Python build and cache artefacts
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.venv
+venv
+env
+
+# Tests do not run in the production image
+tests
+
+# Local tooling and docs
+.vscode
+.idea
+.claude
+.expo
+*.md
+!README.md
+docker-compose*.yml
+Dockerfile
+.dockerignore

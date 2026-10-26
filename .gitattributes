@@ -1,0 +1,13 @@
+# Files that run inside a Linux container must keep LF endings, whatever the
+# machine they were cloned to. A shell script checked out with CRLF fails at
+# startup with "bad interpreter: No such file or directory", which gives no hint
+# that line endings are the cause -- and development here happens on Windows.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+Caddyfile       text eol=lf
+entrypoint.sh   text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Let git decide for everything else.
+*               text=auto
