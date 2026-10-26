@@ -268,10 +268,11 @@ flowchart TB
 │   └── HANDOFF.md          product rules and every screen, explained
 ├── tests/                  pytest suite and safety_cases.json
 ├── scripts/                demo seed data
-├── docker/                 container entrypoint and proxy config
+├── docker/                 container entrypoint, Caddy and example nginx configs
 ├── docs/images/            screenshots and figures used in this README
 ├── Dockerfile              backend image
 ├── docker-compose.yml      production stack
+├── docker-compose.override.yml  run behind an existing nginx (API on loopback, Caddy off)
 ├── docker-compose.dev.yml  containerised local development
 └── LICENSE                 all rights reserved
 ```
@@ -355,9 +356,11 @@ SafeGate was designed and built by:
 
 | | |
 |---|---|
-| **Suyog Kadariya** | [@suyogkad](https://github.com/suyogkad) |
+| **Suyog Kadariya** | [@suyogkad](https://github.com/suyogkad) · UI/UX design (Figma) |
 | **Nasla Maharjan** | [@Naslaa](https://github.com/Naslaa) |
-| **Krish Rajbhandari** | |
+| **Krish Rajbhandari** | [@KRISHRAJBHANDARI](https://github.com/KRISHRAJBHANDARI) |
+
+Every screen of the SafeGate app was designed in Figma by Suyog Kadariya.
 
 ---
 
