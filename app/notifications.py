@@ -15,7 +15,7 @@ class NotificationSender(ABC):
 
 class MockNotificationSender(NotificationSender):
     """Logs instead of sending. Never prints the message body, to avoid
-    leaking child-related details to the console (see CLAUDE.md privacy rules).
+    leaking child-related details to the console (see extras/CLAUDE.md privacy rules).
     """
 
     async def send_email(self, to: str, subject: str, body: str) -> None:

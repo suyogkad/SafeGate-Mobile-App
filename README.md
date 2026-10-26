@@ -1,16 +1,18 @@
 # Autism Support Platform -- Backend
 
-A support and learning tool for autistic children: parents book online sessions with therapists, and children use a guided AI companion under a defence layer of safety checks. This is **not** a therapy, treatment, diagnostic, or emergency service -- see `CLAUDE.md` for the full set of non-negotiable safety and privacy rules this codebase follows.
+A support and learning tool for autistic children: parents book online sessions with therapists, and children use a guided AI companion under a defence layer of safety checks. This is **not** a therapy, treatment, diagnostic, or emergency service -- see `extras/CLAUDE.md` for the full set of non-negotiable safety and privacy rules this codebase follows.
 
 This repo also contains two clients: `frontend/`, the admin web console (Vite + React + Tailwind, see `frontend/README.md`), and `mobile/`, the parent + therapist app with a supervised child mode (Expo / React Native, see `mobile/README.md`).
 
 ## Documentation
 
-- **`TECHNICAL.md`** -- setup, the code map, how a request flows, where each safety rule
+The documents under `extras/` are kept locally by the team and are not in this repository.
+
+- **`extras/TECHNICAL.md`** -- setup, the code map, how a request flows, where each safety rule
   is enforced, the data model, every endpoint, and what is not built. Start here.
-- **`USERMANUAL.md`** -- how the administrator, therapists, parents and children actually
+- **`extras/USERMANUAL.md`** -- how the administrator, therapists, parents and children actually
   use the app, A to Z, with no technical content.
-- **`CLAUDE.md`** -- the non-negotiable safety and privacy rules this codebase follows.
+- **`extras/CLAUDE.md`** -- the non-negotiable safety and privacy rules this codebase follows.
 - **`mobile/HANDOFF.md`** -- authoritative for the mobile product: every screen, the 21
   numbered product rules, and the wording that is a compliance surface.
 
@@ -26,7 +28,7 @@ This repo also contains two clients: `frontend/`, the admin web console (Vite + 
 
 ### 1. Database
 
-Local dev uses a **natively-installed PostgreSQL** (not Docker) on this machine, due to a conflict between Docker Desktop's Hyper-V requirement and this machine's onboard network adapter (see `CLAUDE.md`). `docker-compose.yml` is still provided for environments without that conflict (CI, a Linux host, etc).
+Local dev uses a **natively-installed PostgreSQL** (not Docker) on this machine, due to a conflict between Docker Desktop's Hyper-V requirement and this machine's onboard network adapter (see `extras/CLAUDE.md`). `docker-compose.yml` is still provided for environments without that conflict (CI, a Linux host, etc).
 
 Whichever way you run Postgres, create the app's database and role:
 
@@ -58,7 +60,7 @@ cp .env.example .env
 | `JWT_SECRET_KEY` | Random secret for signing access tokens. Generate one, don't use the placeholder. |
 | `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | JWT config. |
 | `GROQ_API_KEY` | Required before the console will let you select the `groq` provider. Get one free at [console.groq.com](https://console.groq.com) -- note this is **Groq**, not xAI's **Grok**. |
-| `GOOGLE_API_KEY` | Required before the console will let you select the `gemini` AI provider. Get one free at [aistudio.google.com](https://aistudio.google.com) -- no billing required, but the free tier is capped at **20 requests/day per model per project** (see `CLAUDE.md`'s AI provider notes). |
+| `GOOGLE_API_KEY` | Required before the console will let you select the `gemini` AI provider. Get one free at [aistudio.google.com](https://aistudio.google.com) -- no billing required, but the free tier is capped at **20 requests/day per model per project** (see `extras/CLAUDE.md`'s AI provider notes). |
 | `DAILY_API_KEY` | Required before the console will let you select the `daily` video provider. Get it from the Daily dashboard under **Developers**. |
 | `ENVIRONMENT`, `CORS_ORIGINS` | App environment name and allowed CORS origins. |
 
@@ -106,11 +108,11 @@ Tests that call the real model are marked `real_model` and excluded from the def
 pytest -m real_model -s
 ```
 
-On Groq the full 65-case suite completes in one run. Last full run (6 Oct 2026, `openai/gpt-oss-120b`): **44/44 risky caught, 0/20 safe wrongly flagged**, one transient error retried. That is a smoke test, not clinical validation, and the prompts are still `PLACEHOLDER` -- see `CLAUDE.md`.
+On Groq the full 65-case suite completes in one run. Last full run (6 Oct 2026, `openai/gpt-oss-120b`): **44/44 risky caught, 0/20 safe wrongly flagged**, one transient error retried. That is a smoke test, not clinical validation, and the prompts are still `PLACEHOLDER` -- see `extras/CLAUDE.md`.
 
 ## Before launch checklist
 
-Carried from `CLAUDE.md` -- **none of this has been done yet.** Nothing in this codebase should reach a real child until every item below is complete:
+Carried from `extras/CLAUDE.md` -- **none of this has been done yet.** Nothing in this codebase should reach a real child until every item below is complete:
 
 - [ ] Clinical review of `scripts.py`, the keyword list, and the safety prompts (all currently marked `PLACEHOLDER`)
 - [ ] Privacy law review (Australian Privacy Act and any applicable health data rules)
@@ -127,5 +129,5 @@ Carried from `CLAUDE.md` -- **none of this has been done yet.** Nothing in this 
 - **Notifications are still mock** -- alerts and session reminders are recorded but never actually delivered. No email or SMS provider is wired up yet.
 - **Daily.co is US-hosted**, so session video leaves Australia. Flag this in the privacy review; `app/video.py` is an abstraction, so a self-hosted provider in an AU region can replace it without touching the rest of the app.
 - **APScheduler uses an in-memory job store** -- reminders do not survive an app restart.
-- **Classifier accuracy is a smoke test, not clinical validation.** The full 65-case suite now runs against the real model and passed cleanly, but the prompts, scripts and keyword list are all still `PLACEHOLDER` and need a clinician. See `CLAUDE.md`.
-- **See `TECHNICAL.md` section 14** for the full, current list of what is not built.
+- **Classifier accuracy is a smoke test, not clinical validation.** The full 65-case suite now runs against the real model and passed cleanly, but the prompts, scripts and keyword list are all still `PLACEHOLDER` and need a clinician. See `extras/CLAUDE.md`.
+- **See `extras/TECHNICAL.md` section 14** for the full, current list of what is not built.

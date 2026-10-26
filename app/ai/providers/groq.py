@@ -60,7 +60,7 @@ class GroqProvider:
 
     async def transcribe(self, audio: bytes, filename: str, model: str) -> str:
         """Turn a recording into text. The audio is forwarded and then dropped --
-        it is never written to disk or to the database (CLAUDE.md: collect the
+        it is never written to disk or to the database (extras/CLAUDE.md: collect the
         minimum child data needed)."""
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             response = await client.post(

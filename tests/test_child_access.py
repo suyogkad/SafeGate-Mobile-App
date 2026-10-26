@@ -247,7 +247,7 @@ async def test_an_archived_child_cannot_be_linked_or_keep_using_a_phone(client, 
 
 @pytest.mark.asyncio
 async def test_child_access_is_attributed_to_the_device_not_a_person(client, db_session):
-    """CLAUDE.md requires every access to a child's records to be logged. A child's own
+    """extras/CLAUDE.md requires every access to a child's records to be logged. A child's own
     device is an actor too, so the trail has no blind spot."""
     parent_token, child, _ = await _linked_child(client)
 

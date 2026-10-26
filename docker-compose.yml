@@ -7,7 +7,7 @@
 # For local development use docker-compose.dev.yml instead -- it mounts the
 # source, reloads on change and exposes Postgres on 5432.
 #
-# Full walkthrough: TECHNICAL.md, "Deploying to a VPS".
+# Full walkthrough: extras/TECHNICAL.md, "Deploying to a VPS".
 
 name: safegate
 

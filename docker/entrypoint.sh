@@ -20,7 +20,7 @@ fi
 #   * admin-editable settings are applied to the running process, so with
 #     several workers a change in the console would reach only one of them.
 # Both need fixing before scaling out; until then one worker is the honest
-# configuration. See TECHNICAL.md.
+# configuration. See extras/TECHNICAL.md.
 #
 # --proxy-headers lets uvicorn see the real scheme and client IP from Caddy, so
 # redirects and logs are right. It is safe here because only Caddy, on the

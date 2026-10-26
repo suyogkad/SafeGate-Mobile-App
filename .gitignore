@@ -16,3 +16,6 @@ venv/
 dist/
 build/
 .DS_Store
+
+# Project documents and Claude tooling: kept locally, never pushed
+extras/

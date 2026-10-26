@@ -1,5 +1,5 @@
 """The only file (besides mock.py and __init__.py's dispatch) allowed to import
-the Google Gemini SDK, per CLAUDE.md's "one door to the AI" rule.
+the Google Gemini SDK, per extras/CLAUDE.md's "one door to the AI" rule.
 """
 from google.genai import Client
 from google.genai.types import Content, GenerateContentConfig, Part

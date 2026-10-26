@@ -25,5 +25,5 @@ Requires the backend running (see the project root `README.md`) with CORS config
 
 ## What's intentionally not here
 
-- Nothing lets an admin create/edit a child, session, or schedule directly -- those are parent/therapist actions by design (see the backend's `CLAUDE.md`). Admin's job is user management and oversight only.
+- Nothing lets an admin create/edit a child, session, or schedule directly -- those are parent/therapist actions by design (see `extras/CLAUDE.md` at the repo root). Admin's job is user management and oversight only.
 - No `session_notes` view -- the backend doesn't have endpoints for it yet (see the root `README.md`'s "known gaps").
