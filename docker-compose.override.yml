@@ -1,0 +1,11 @@
+# VPS with nginx already on 80/443: nginx fronts the API, so Caddy is left off.
+# Compose loads this file automatically. Plain `docker compose up -d --build`
+# starts db + api only; add `--profile caddy` to run the bundled Caddy instead
+# (and remove the loopback port below if you do).
+# See extras/TECHNICAL.md, "Deploying behind an existing nginx".
+services:
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"
+  caddy:
+    profiles: ["caddy"]
