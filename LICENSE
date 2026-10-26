@@ -1,0 +1,214 @@
+SAFEGATE PROPRIETARY LICENCE
+ALL RIGHTS RESERVED
+
+Copyright (c) 2026 Suyog Kadariya, Nasla Maharjan and Krish Rajbhandari.
+All rights reserved.
+
+-------------------------------------------------------------------------------
+READ THIS FIRST
+-------------------------------------------------------------------------------
+
+This repository is publicly VISIBLE. It is NOT open source.
+
+Being able to see this code does not give you any right to use it. No licence,
+express or implied, is granted to you except the narrow permissions written in
+section 4. If you are not sure whether something is allowed, it is not allowed.
+
+-------------------------------------------------------------------------------
+1. THE WORK AND ITS AUTHORS
+-------------------------------------------------------------------------------
+
+1.1 "The Work" means everything in this repository and its full revision
+    history, in any form, whether in source code, object code, compiled,
+    minified or any other form. This includes, without limitation: source code;
+    database schemas and migrations; application programming interfaces and
+    their design; system architecture; the safety and defence-layer design,
+    classifier prompts, scripts, keyword lists and test cases; user-interface
+    and user-experience designs, screens, layouts, illustrations, icons and
+    images; the names "SafeGate" and any associated logos; product rules,
+    wording and copy; documentation; screenshots; diagrams; and any
+    translation, adaptation or portion of any of these.
+
+1.2 The Work is the genuine and original work of its authors:
+
+      - Suyog Kadariya
+      - Nasla Maharjan
+      - Krish Rajbhandari
+
+    (together, "the Authors"). The Authors jointly own all right, title and
+    interest in the Work, including all copyright, moral rights, design rights,
+    trade mark rights, rights in confidential information and all other
+    intellectual property rights anywhere in the world, whether registered or
+    not.
+
+1.3 The Work was created by the Authors and submitted to the Sydney IT Code
+    Fair 2026. Its submission to, display at, or judging by the Sydney IT Code
+    Fair 2026 does not place any part of it in the public domain and does not
+    transfer, assign or license any right in it to anyone, except the limited
+    evaluation permission in section 4.2.
+
+-------------------------------------------------------------------------------
+2. NO LICENCE IS GRANTED
+-------------------------------------------------------------------------------
+
+2.1 Except for the permissions in section 4, no right or licence is granted to
+    any person, by implication, estoppel, publication or otherwise. All rights
+    not expressly granted are reserved by the Authors.
+
+2.2 The public visibility of this repository, its presence on GitHub or any
+    other platform, any fork, copy or mirror of it, and any statement made in a
+    demonstration, presentation or video, does not grant any licence.
+
+-------------------------------------------------------------------------------
+3. WHAT YOU MUST NOT DO
+-------------------------------------------------------------------------------
+
+Without the prior, express, written permission of ALL THREE Authors, signed by
+each of them, you must not, in whole or in part, directly or indirectly, by any
+means or in any medium:
+
+  (a) copy, reproduce, download for re-use, clone for re-use, or store the
+      Work, except as section 4 allows;
+  (b) modify, adapt, translate, port, refactor, rewrite, paraphrase or
+      otherwise create any derivative work based on the Work, including a work
+      that re-implements its design, architecture, safety layer or interface;
+  (c) distribute, publish, re-publish, upload, share, mirror, transmit, sell,
+      rent, lease, lend, sublicense or otherwise make the Work available to
+      anyone;
+  (d) use, run, deploy, host or operate the Work, or any part of it, for any
+      purpose, including as a website, application, hosted service or
+      software-as-a-service, whether commercial or non-commercial;
+  (e) submit, present or enter the Work, or anything derived from it, in any
+      competition, hackathon, code fair, award, course, assignment,
+      assessment, thesis, grant, tender or job application, or otherwise claim
+      or imply that you, or anyone other than the Authors, created it;
+  (f) use the Work, or any part of it, to train, fine-tune, evaluate,
+      benchmark, prompt or build any machine-learning or artificial-
+      intelligence model, dataset or system, or include it in any such
+      dataset, or scrape, crawl or harvest it by automated means;
+  (g) reverse engineer, decompile or disassemble any part of the Work, except
+      to the extent that the applicable law expressly permits this despite
+      this restriction;
+  (h) remove, obscure or alter any copyright notice, author attribution,
+      licence text, "PLACEHOLDER" safety marker or other notice in the Work;
+  (i) use the name "SafeGate", its logos, or the names of the Authors to
+      endorse, promote or identify any product, service or project; or
+  (j) allow, help or encourage anyone else to do any of the above.
+
+These restrictions apply to every part of the Work, however small, and to the
+Work as it exists at any point in its revision history.
+
+-------------------------------------------------------------------------------
+4. THE ONLY PERMISSIONS
+-------------------------------------------------------------------------------
+
+4.1 Viewing on GitHub. You may view the Work in a web browser on GitHub. If
+    the GitHub Terms of Service give you the ability to view or fork a public
+    repository using GitHub's own features, you may do only what those terms
+    strictly require, and nothing more. A fork created this way grants no
+    right to use, modify, run, deploy or distribute the Work, and every
+    restriction in section 3 applies to it in full.
+
+4.2 Evaluation for the Sydney IT Code Fair 2026. The official organisers and
+    appointed judges of the Sydney IT Code Fair 2026 may access, view, install,
+    run and test the Work solely to evaluate this submission, and only for the
+    duration of that competition's judging process. This permission is
+    personal, non-exclusive, non-transferable and non-sublicensable. It does
+    not permit any other use, any publication of the source code, or keeping
+    copies after judging ends.
+
+4.3 Fair dealing. Nothing in this licence limits any right you have under the
+    Copyright Act 1968 (Cth), or any other law that applies to you, that
+    cannot lawfully be excluded, such as fair dealing for the purpose of
+    research, study, criticism or review, where that law permits it. Any such
+    use must give full attribution to the Authors.
+
+-------------------------------------------------------------------------------
+5. MORAL RIGHTS
+-------------------------------------------------------------------------------
+
+The Authors assert their moral rights in the Work under Part IX of the
+Copyright Act 1968 (Cth) and under any equivalent law anywhere in the world,
+including the right of attribution of authorship, the right not to have
+authorship falsely attributed, and the right of integrity of authorship. Each
+Author must be identified as an author of the Work wherever any part of it is
+referred to, reproduced or shown, and the Work must not be subjected to
+derogatory treatment.
+
+-------------------------------------------------------------------------------
+6. THIRD-PARTY COMPONENTS
+-------------------------------------------------------------------------------
+
+The Work relies on third-party open-source libraries and services (for example
+those listed in requirements.txt and the package.json files). Those components
+remain under their own licences and are not claimed by the Authors. This
+licence covers the Work itself: the Authors' original code, design, content and
+the selection and arrangement of the whole.
+
+-------------------------------------------------------------------------------
+7. BREACH AND ENFORCEMENT
+-------------------------------------------------------------------------------
+
+7.1 Any use of the Work that is not expressly permitted by section 4 infringes
+    the Authors' rights.
+
+7.2 Any permission given by this licence ends automatically and immediately,
+    without notice, if you breach any of its terms. On termination you must
+    stop all use of the Work and permanently delete every copy, fork, mirror
+    and derivative in your possession or control.
+
+7.3 The Authors reserve every remedy available to them at law and in equity,
+    in every jurisdiction, including injunctions, damages, additional damages,
+    an account of profits, delivery up and destruction of infringing copies,
+    takedown notices to any host or platform, and the recovery of legal costs.
+    Infringement of copyright can also be a criminal offence under the
+    Copyright Act 1968 (Cth) and the laws of other countries.
+
+7.4 Any failure or delay by the Authors in enforcing any term is not a waiver
+    of that term or of any other right.
+
+-------------------------------------------------------------------------------
+8. NO WARRANTY, NO LIABILITY, NOT A MEDICAL OR EMERGENCY SERVICE
+-------------------------------------------------------------------------------
+
+8.1 THE WORK IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+    KIND, EXPRESS OR IMPLIED, INCLUDING ANY WARRANTY OF MERCHANTABILITY, FITNESS
+    FOR A PARTICULAR PURPOSE, ACCURACY, SAFETY OR NON-INFRINGEMENT, TO THE
+    FULLEST EXTENT PERMITTED BY LAW.
+
+8.2 TO THE FULLEST EXTENT PERMITTED BY LAW, THE AUTHORS ARE NOT LIABLE FOR ANY
+    CLAIM, LOSS, DAMAGE OR OTHER LIABILITY, WHETHER DIRECT, INDIRECT,
+    INCIDENTAL, SPECIAL OR CONSEQUENTIAL, ARISING FROM OR CONNECTED WITH THE
+    WORK OR ANY USE OF IT, WHETHER IN CONTRACT, TORT (INCLUDING NEGLIGENCE) OR
+    OTHERWISE. Nothing in this licence excludes any right or guarantee that
+    cannot lawfully be excluded, including under the Australian Consumer Law.
+
+8.3 The Work is a prototype support and learning tool. It is not therapy,
+    treatment, diagnosis, monitoring, a medical device or an emergency service,
+    and it has not been clinically reviewed. It must not be used with any real
+    child. In an emergency in Australia, call 000.
+
+-------------------------------------------------------------------------------
+9. GENERAL
+-------------------------------------------------------------------------------
+
+9.1 Governing law. This licence is governed by the laws of New South Wales,
+    Australia. You submit to the exclusive jurisdiction of the courts of New
+    South Wales and the courts that hear appeals from them, except that the
+    Authors may seek urgent injunctive relief in any court anywhere.
+
+9.2 Severability. If any part of this licence is held invalid or
+    unenforceable, that part is to be read down or severed to the minimum
+    extent necessary, and the rest of this licence continues in full force.
+
+9.3 Entire licence. This document is the entire licence for the Work. It can
+    only be varied by a written document signed by all three Authors.
+
+9.4 Permission requests. To ask for permission to do anything this licence
+    does not allow, contact the Authors through the repository owner's GitHub
+    profile (https://github.com/suyogkad). No permission exists unless it is
+    given in writing and signed by all three Authors.
+
+-------------------------------------------------------------------------------
+Copyright (c) 2026 Suyog Kadariya, Nasla Maharjan and Krish Rajbhandari.
+All rights reserved.
