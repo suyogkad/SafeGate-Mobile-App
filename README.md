@@ -40,8 +40,11 @@ online sessions with therapists. An admin console keeps oversight without readin
 
 ## 🎬 Video demo
 
-<!-- Replace the link below with the YouTube URL once the video is published. -->
-**YouTube:** _coming soon_
+[![Watch the SafeGate demo on YouTube](https://img.youtube.com/vi/jVkd6N_8vTo/maxresdefault.jpg)](https://youtu.be/jVkd6N_8vTo)
+
+**▶ [Watch the 7-minute demo on YouTube](https://youtu.be/jVkd6N_8vTo)**: the live system, by role, from a parent booking a session to the safety layer catching a worrying message.
+
+**Try it live:** [appsafegate.krimustech.com](https://appsafegate.krimustech.com) (child, parent and therapist; web preview) · [adminsafegate.krimustech.com](https://adminsafegate.krimustech.com) (admin console)
 
 ---
 
