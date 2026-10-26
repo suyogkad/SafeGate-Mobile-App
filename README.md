@@ -46,6 +46,18 @@ online sessions with therapists. An admin console keeps oversight without readin
 
 **Try it live:** [appsafegate.krimustech.com](https://appsafegate.krimustech.com) (child, parent and therapist; web preview) · [adminsafegate.krimustech.com](https://adminsafegate.krimustech.com) (admin console)
 
+### Demo accounts
+
+| Role | Where to sign in | Email | Password |
+|---|---|---|---|
+| Parent | [appsafegate.krimustech.com](https://appsafegate.krimustech.com) → *I'm a parent or carer* → *I already have an account* | `parent@example.com` | `Nepal@12345` |
+| Therapist | [appsafegate.krimustech.com](https://appsafegate.krimustech.com) → *I'm a therapist* | `therapist@example.com` | `Nepal@12345` |
+| Admin | [adminsafegate.krimustech.com](https://adminsafegate.krimustech.com) | `admin@example.com` | `Nepal@12345` |
+
+**To try the child's side:** sign in as the parent, open **Account → Alex** to get a one-time code, then on a second device or browser choose **I already have a code** and type it in. A child never has an email or a password.
+
+All names and data are fictional demo data. Please don't change these passwords, so other reviewers can sign in too.
+
 ---
 
 ## Contents
